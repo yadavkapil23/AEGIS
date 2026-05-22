@@ -13,11 +13,25 @@ tonic = "0.10"
 prost = "0.12"
 uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["fmt", "json", "env-filter"] }
 anyhow = "1"
 lru = "0.12"
 parking_lot = "0.12"
 thiserror = "1"
+
+# Security & Authentication
+jsonwebtoken = "9"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Metrics & Observability
+prometheus = "0.13"
+opentelemetry = { version = "0.20", features = ["trace"] }
+opentelemetry-otlp = "0.13"
+tracing-opentelemetry = "0.21"
+
+# Futures & Async
+futures-util = "0.3"
 
 [build-dependencies]
 tonic-build = "0.10"
