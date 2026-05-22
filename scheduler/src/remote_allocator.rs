@@ -173,21 +173,31 @@ impl RemoteAllocator {
             };
         }
 
-        // ---- stub fallback (no live channel) ----
+        // ---- no live channel - return proper error ----
+        // Don't silently succeed with fake allocations
+        warn!(
+            "gRPC client for {} not connected - allocation failed",
+            self.node_id
+        );
+        self.record_failure().ok();
+
+        // Check if we have cached capacity info, but still fail if not connected
         let capacity = self.known_capacity.lock();
         if let Some(cap) = capacity.as_ref() {
-            if cap.free_blocks >= num_blocks {
+            if !cap.is_stale() && cap.free_blocks >= num_blocks {
                 drop(capacity);
-                self.record_success().ok();
-                info!("[stub] allocated {} blocks from {}", num_blocks, self.node_id);
-                let blocks: Vec<usize> = (0..num_blocks).collect();
-                return Ok(blocks);
+                warn!(
+                    "Using cached capacity but gRPC unavailable for {} - failing allocation",
+                    self.node_id
+                );
             }
         }
         drop(capacity);
-        self.record_failure().ok();
+
+        // Fail explicitly - don't return fake block IDs
         Err(anyhow!(
-            "Remote node {} has insufficient capacity",
+            "Cannot allocate {} blocks from {}: gRPC channel unavailable",
+            num_blocks,
             self.node_id
         ))
     }
