@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, warn, instrument};
 use uuid::Uuid;
-use chrono::Utc;
 
 /// InferenceService: handles inference requests
 pub struct InferenceService {
@@ -46,7 +45,7 @@ impl InferenceService {
         }
 
         // Queue the request
-        let queued = self.queue.enqueue(&request)?;
+        let _queued = self.queue.enqueue(&request)?;
         self.metrics.record_queued();
 
         // Simulate inference pipeline
