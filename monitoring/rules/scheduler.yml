@@ -1,0 +1,90 @@
+groups:
+  - name: scheduler_alerts
+    interval: 30s
+    rules:
+      # Alert if scheduler node is down
+      - alert: SchedulerNodeDown
+        expr: up{job="scheduler"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scheduler node {{ $labels.instance }} is down"
+          description: "Scheduler node {{ $labels.instance }} has been down for more than 1 minute"
+
+      # Alert if consensus is unhealthy
+      - alert: ConsensusUnhealthy
+        expr: |
+          increase(scheduler_consensus_errors_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consensus errors on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has {{ $value }} consensus errors in the last 5 minutes"
+
+      # Alert if cache is nearly full
+      - alert: CacheNearlyFull
+        expr: |
+          (scheduler_cache_allocated_blocks / scheduler_cache_total_blocks) > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache is {{ $value | humanizePercentage }} full on {{ $labels.instance }}"
+          description: "Cache utilization on {{ $labels.instance }} has exceeded 90%"
+
+      # Alert if allocation latency is high
+      - alert: HighAllocationLatency
+        expr: |
+          histogram_quantile(0.99, scheduler_allocation_latency_ms) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High allocation latency on {{ $labels.instance }}"
+          description: "99th percentile allocation latency is {{ $value }}ms on {{ $labels.instance }}"
+
+      # Alert if persistence is failing
+      - alert: PersistenceFailures
+        expr: |
+          increase(scheduler_persistence_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Persistence failures on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has persistence failures"
+
+      # Alert if quorum is lost
+      - alert: QuorumLost
+        expr: |
+          count(up{job="scheduler"} == 1) < 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scheduler cluster has lost quorum"
+          description: "Only {{ $value }} nodes are up, cluster needs at least 2"
+
+      # Alert for memory pressure
+      - alert: MemoryPressure
+        expr: |
+          container_memory_usage_bytes{pod=~"scheduler.*"} / container_spec_memory_limit_bytes > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory pressure on {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit"
+
+      # Alert for CPU throttling
+      - alert: CPUThrottling
+        expr: |
+          increase(container_cpu_cfs_throttled_seconds_total{pod=~"scheduler.*"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU throttling on {{ $labels.pod }}"
+          description: "Pod {{ $labels.pod }} is being throttled frequently"
