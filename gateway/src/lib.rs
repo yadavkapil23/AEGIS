@@ -1,16 +1,28 @@
 // Gateway module: HTTP/gRPC entry point for AEGIS inference
 
+// Legacy modules
 pub mod service;
 pub mod auth;
 pub mod rate_limiter;
 pub mod metrics;
 pub mod request_queue;
 
+// Security modules
+pub mod credentials;
+pub mod middleware;
+pub mod api_key_handlers;
+
+// Re-exports
 pub use service::InferenceService;
 pub use auth::AuthMiddleware;
 pub use rate_limiter::RateLimiter;
 pub use metrics::GatewayMetrics;
 pub use request_queue::RequestQueue;
+
+// Security re-exports
+pub use credentials::{extract_credential, extract_client_ip, extract_request_id};
+pub use middleware::{auth_middleware, rate_limit_middleware, GatewayState};
+pub use api_key_handlers::*;
 
 use anyhow::Result;
 use std::sync::Arc;
