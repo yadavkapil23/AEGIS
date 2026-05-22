@@ -1,0 +1,15 @@
+# Grafana Dashboard Provider Configuration
+# Automatically loads dashboards from the provisioning directory
+
+apiVersion: 1
+
+providers:
+  - name: 'AEGIS Dashboards'
+    orgId: 1
+    folder: 'AEGIS'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
