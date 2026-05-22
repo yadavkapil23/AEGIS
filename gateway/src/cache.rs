@@ -49,14 +49,12 @@ mod tests {
     #[test]
     fn test_cache_put_get() {
         let cache = RequestCache::new(10);
-        let response = AllocationResponse {
-            request_id: "req-1".to_string(),
-            success: true,
-            block_ids: vec![1, 2, 3],
-            error: None,
-            latency_ms: 10,
-            node_id: "node-1".to_string(),
-        };
+        let response = serde_json::json!({
+            "request_id": "req-1",
+            "success": true,
+            "block_ids": [1, 2, 3],
+            "latency_ms": 10
+        });
 
         cache.put("req-1".to_string(), response.clone());
         assert_eq!(cache.get("req-1"), Some(response));
@@ -66,32 +64,9 @@ mod tests {
     fn test_cache_lru_eviction() {
         let cache = RequestCache::new(2);
 
-        let resp1 = AllocationResponse {
-            request_id: "req-1".to_string(),
-            success: true,
-            block_ids: vec![1],
-            error: None,
-            latency_ms: 10,
-            node_id: "node-1".to_string(),
-        };
-
-        let resp2 = AllocationResponse {
-            request_id: "req-2".to_string(),
-            success: true,
-            block_ids: vec![2],
-            error: None,
-            latency_ms: 10,
-            node_id: "node-1".to_string(),
-        };
-
-        let resp3 = AllocationResponse {
-            request_id: "req-3".to_string(),
-            success: true,
-            block_ids: vec![3],
-            error: None,
-            latency_ms: 10,
-            node_id: "node-1".to_string(),
-        };
+        let resp1 = serde_json::json!({"request_id": "req-1", "data": "value1"});
+        let resp2 = serde_json::json!({"request_id": "req-2", "data": "value2"});
+        let resp3 = serde_json::json!({"request_id": "req-3", "data": "value3"});
 
         cache.put("req-1".to_string(), resp1);
         cache.put("req-2".to_string(), resp2);
