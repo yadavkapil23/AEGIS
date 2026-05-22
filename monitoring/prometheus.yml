@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'aegis'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules files
+rule_files:
+  - 'rules/*.yml'
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scheduler nodes via Kubernetes service discovery
+  - job_name: 'scheduler'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: scheduler
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: metrics
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+
+  # Docker Compose service discovery (for local testing)
+  - job_name: 'scheduler-docker'
+    static_configs:
+      - targets: ['localhost:9090', 'localhost:9091', 'localhost:9092']
+        labels:
+          - job: 'scheduler'
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: 'localhost:909(\d)'
+        replacement: 'node-${1}'
+        target_label: instance
+
+  # Node exporter for system metrics (if available)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
