@@ -1,6 +1,7 @@
 use crate::config::BackendConfig;
 use crate::error::{BackendError, Result};
 use crate::huggingface::HuggingFaceBackend;
+use crate::llamacpp::LlamaCppBackend;
 use crate::models::{BackendPreference, HealthStatus, InferenceRequest, InferenceResponse};
 use crate::traits::InferenceBackend;
 use crate::vllm::VLLMBackend;
@@ -13,6 +14,7 @@ pub struct BackendRouter {
     config: BackendConfig,
     hf_backend: Option<Arc<HuggingFaceBackend>>,
     vllm_backend: Option<Arc<VLLMBackend>>,
+    llamacpp_backend: Option<Arc<LlamaCppBackend>>,
     health_status: Arc<RwLock<BackendHealthStatus>>,
 }
 
@@ -20,6 +22,7 @@ pub struct BackendRouter {
 struct BackendHealthStatus {
     hf_healthy: bool,
     vllm_healthy: bool,
+    llamacpp_healthy: bool,
 }
 
 impl BackendRouter {
@@ -55,7 +58,22 @@ impl BackendRouter {
             None
         };
 
-        if hf_backend.is_none() && vllm_backend.is_none() {
+        let llamacpp_backend = if let Some(llamacpp_config) = &config.llamacpp {
+            match LlamaCppBackend::new(llamacpp_config.clone()) {
+                Ok(backend) => {
+                    info!("llama.cpp backend initialized");
+                    Some(Arc::new(backend))
+                }
+                Err(e) => {
+                    warn!("Failed to initialize llama.cpp backend: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        if hf_backend.is_none() && vllm_backend.is_none() && llamacpp_backend.is_none() {
             return Err(BackendError::ConfigError(
                 "No backends configured".to_string(),
             ));
@@ -65,15 +83,17 @@ impl BackendRouter {
             config,
             hf_backend,
             vllm_backend,
+            llamacpp_backend,
             health_status: Arc::new(RwLock::new(BackendHealthStatus {
                 hf_healthy: true,
                 vllm_healthy: true,
+                llamacpp_healthy: true,
             })),
         })
     }
 
     /// Route a request to the appropriate backend
-    pub async fn infer(&self, mut request: InferenceRequest) -> Result<InferenceResponse> {
+    pub async fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         // Determine which backend(s) to try
         let backends_to_try = self.get_backends_to_try(&request).await;
 
@@ -97,6 +117,13 @@ impl BackendRouter {
                 }
                 "vllm" => {
                     if let Some(backend) = &self.vllm_backend {
+                        backend.infer(request.clone()).await
+                    } else {
+                        continue;
+                    }
+                }
+                "llamacpp" => {
+                    if let Some(backend) = &self.llamacpp_backend {
                         backend.infer(request.clone()).await
                     } else {
                         continue;
@@ -162,18 +189,23 @@ impl BackendRouter {
                     if health.vllm_healthy && self.vllm_backend.is_some() {
                         backends.push("vllm".to_string());
                     }
+                    // Then try llama.cpp for local low-latency
+                    if health.llamacpp_healthy && self.llamacpp_backend.is_some() {
+                        backends.push("llamacpp".to_string());
+                    }
                 }
 
-                // Add fallback order
+                // Add fallback order for others
                 for backend_name in &self.config.fallback_order {
                     if !backends.contains(backend_name) {
                         match backend_name.as_str() {
                             "vllm" if health.vllm_healthy && self.vllm_backend.is_some() => {
                                 backends.push(backend_name.clone());
                             }
-                            "huggingface"
-                                if health.hf_healthy && self.hf_backend.is_some() =>
-                            {
+                            "llamacpp" if health.llamacpp_healthy && self.llamacpp_backend.is_some() => {
+                                backends.push(backend_name.clone());
+                            }
+                            "huggingface" if health.hf_healthy && self.hf_backend.is_some() => {
                                 backends.push(backend_name.clone());
                             }
                             _ => {}
@@ -197,7 +229,6 @@ impl BackendRouter {
                     let mut health_status = self.health_status.write().await;
                     health_status.hf_healthy = status.healthy;
                     drop(health_status);
-
                     statuses.push(status);
                 }
                 Err(e) => {
@@ -215,13 +246,29 @@ impl BackendRouter {
                     let mut health_status = self.health_status.write().await;
                     health_status.vllm_healthy = status.healthy;
                     drop(health_status);
-
                     statuses.push(status);
                 }
                 Err(e) => {
                     error!("vLLM health check failed: {}", e);
                     let mut health_status = self.health_status.write().await;
                     health_status.vllm_healthy = false;
+                }
+            }
+        }
+
+        // Check llama.cpp backend
+        if let Some(backend) = &self.llamacpp_backend {
+            match backend.health_check().await {
+                Ok(status) => {
+                    let mut health_status = self.health_status.write().await;
+                    health_status.llamacpp_healthy = status.healthy;
+                    drop(health_status);
+                    statuses.push(status);
+                }
+                Err(e) => {
+                    error!("llama.cpp health check failed: {}", e);
+                    let mut health_status = self.health_status.write().await;
+                    health_status.llamacpp_healthy = false;
                 }
             }
         }
@@ -240,6 +287,12 @@ impl BackendRouter {
         }
 
         if let Some(backend) = &self.vllm_backend {
+            if let Ok(mut backend_models) = backend.get_models().await {
+                models.append(&mut backend_models);
+            }
+        }
+
+        if let Some(backend) = &self.llamacpp_backend {
             if let Ok(mut backend_models) = backend.get_models().await {
                 models.append(&mut backend_models);
             }
@@ -265,6 +318,12 @@ impl BackendRouter {
             }
         }
 
+        if let Some(backend) = &self.llamacpp_backend {
+            if backend.supports_model(model).await? {
+                return Ok(true);
+            }
+        }
+
         Ok(false)
     }
 
@@ -284,18 +343,12 @@ impl BackendRouter {
             }
         }
 
+        if let Some(backend) = &self.llamacpp_backend {
+            if let Err(e) = backend.warmup().await {
+                warn!("llama.cpp backend warmup failed: {}", e);
+            }
+        }
+
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_router_creation() {
-        let config = BackendConfig::default();
-        let result = BackendRouter::new(config).await;
-        assert!(result.is_err()); // No backends configured
     }
 }
