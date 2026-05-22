@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Backend configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,11 +9,14 @@ pub struct BackendConfig {
     /// vLLM configuration
     pub vllm: Option<VLLMConfig>,
 
+    /// llama.cpp configuration
+    pub llamacpp: Option<LlamaCppConfig>,
+
     /// Default backend preference
-    pub default_preference: String, // "auto", "huggingface", "vllm"
+    pub default_preference: String, // "auto", "huggingface", "vllm", "llamacpp"
 
     /// Fallback order when backends fail
-    pub fallback_order: Vec<String>, // ["vllm", "huggingface"]
+    pub fallback_order: Vec<String>, // ["vllm", "llamacpp", "huggingface"]
 
     /// Global timeout in milliseconds
     pub default_timeout_ms: u64,
@@ -82,13 +84,52 @@ pub struct VLLMConfig {
     pub pool_size: usize,
 }
 
+/// llama.cpp configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlamaCppConfig {
+    /// Enable this backend
+    pub enabled: bool,
+
+    /// llama.cpp server endpoint
+    pub endpoint: String,
+
+    /// List of supported models
+    pub models: Vec<String>,
+
+    /// Request timeout
+    pub timeout_ms: u64,
+
+    /// Max concurrent requests
+    pub max_concurrent_requests: usize,
+
+    /// Enable GPU acceleration
+    pub gpu_enabled: bool,
+
+    /// Number of GPU layers
+    pub gpu_layers: u32,
+
+    /// CPU thread count
+    pub threads: u32,
+
+    /// Context size
+    pub context_size: u32,
+
+    /// Batch size
+    pub batch_size: u32,
+}
+
 impl Default for BackendConfig {
     fn default() -> Self {
         Self {
             huggingface: None,
             vllm: None,
+            llamacpp: None,
             default_preference: "auto".to_string(),
-            fallback_order: vec!["vllm".to_string(), "huggingface".to_string()],
+            fallback_order: vec![
+                "vllm".to_string(),
+                "llamacpp".to_string(),
+                "huggingface".to_string(),
+            ],
             default_timeout_ms: 30000,
             enable_health_checks: true,
             health_check_interval_secs: 60,
@@ -119,9 +160,7 @@ impl Default for VLLMConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            endpoints: vec![
-                "http://localhost:8000".to_string(),
-            ],
+            endpoints: vec!["http://localhost:8000".to_string()],
             models: vec![
                 "mistralai/Mistral-7B-Instruct-v0.2".to_string(),
                 "meta-llama/Llama-2-7b-hf".to_string(),
@@ -131,6 +170,26 @@ impl Default for VLLMConfig {
             load_balancing: "round_robin".to_string(),
             enable_connection_pooling: true,
             pool_size: 10,
+        }
+    }
+}
+
+impl Default for LlamaCppConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://localhost:8080".to_string(),
+            models: vec![
+                "mistral-7b".to_string(),
+                "llama2-7b".to_string(),
+            ],
+            timeout_ms: 30000,
+            max_concurrent_requests: 50,
+            gpu_enabled: true,
+            gpu_layers: 33,
+            threads: 4,
+            context_size: 4096,
+            batch_size: 512,
         }
     }
 }
