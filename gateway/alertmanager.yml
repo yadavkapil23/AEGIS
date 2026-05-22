@@ -1,0 +1,113 @@
+# AlertManager Configuration
+# Defines alert routing and notification channels
+
+global:
+  resolve_timeout: 5m
+  slack_api_url: ''  # Set via environment variable or update here
+
+# Template files for alert formatting
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Alert routing tree
+route:
+  # Default receiver
+  receiver: 'null'
+
+  # Group alerts by labels
+  group_by: ['alertname', 'cluster', 'service']
+
+  # Wait 10s before sending group of alerts
+  group_wait: 10s
+
+  # Send updates every 5m if alert not resolved
+  group_interval: 5m
+
+  # Route critical alerts to immediate receivers
+  repeat_interval: 4h
+
+  # Child routes for specific alert types
+  routes:
+    # Critical infrastructure alerts
+    - match:
+        severity: critical
+      receiver: 'pagerduty'
+      group_wait: 0s       # Send immediately
+      repeat_interval: 2h
+      continue: true
+
+    # Backend errors
+    - match:
+        alertname: 'BackendErrorsIncreasing'
+      receiver: 'slack-backend'
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Circuit breaker alerts
+    - match:
+        alertname: 'CircuitBreakerOpen'
+      receiver: 'slack-alerts'
+      group_wait: 0s
+      repeat_interval: 30m
+
+    # Performance degradation
+    - match:
+        severity: warning
+      receiver: 'slack-alerts'
+      group_wait: 2m
+      repeat_interval: 4h
+
+    # Information level (low priority)
+    - match:
+        severity: info
+      receiver: 'null'
+      group_wait: 30m
+      repeat_interval: 24h
+
+# Receivers (notification destinations)
+receivers:
+  - name: 'null'
+    # No action
+
+  - name: 'slack-alerts'
+    slack_configs:
+      - api_url: ''  # Set SLACK_WEBHOOK_URL environment variable
+        channel: '#aegis-alerts'
+        title: 'AEGIS Alert'
+        text: '{{ .GroupLabels.alertname }}'
+        send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        actions:
+          - type: button
+            text: 'View Alert'
+            url: '{{ .ExternalURL }}'
+
+  - name: 'slack-backend'
+    slack_configs:
+      - api_url: ''  # Set SLACK_WEBHOOK_URL environment variable
+        channel: '#aegis-backend'
+        title: 'Backend Error Alert'
+        text: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.description }}'
+        send_resolved: true
+
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: ''  # Set PAGERDUTY_SERVICE_KEY environment variable
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+
+# Grouping of empty alerts
+inhibit_rules:
+  # Don't alert on backend errors if circuit breaker is open
+  - source_match:
+      severity: 'critical'
+      alertname: 'CircuitBreakerOpen'
+    target_match:
+      alertname: 'BackendErrorsIncreasing'
+    equal: ['cluster', 'service']
+
+  # Suppress info alerts during critical incidents
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'info'
+    equal: ['cluster', 'service']
