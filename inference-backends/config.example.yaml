@@ -1,0 +1,62 @@
+# Inference Backends Configuration
+
+# Default backend preference: "auto", "huggingface", or "vllm"
+default_preference: auto
+
+# Fallback order when a backend fails
+fallback_order:
+  - vllm
+  - huggingface
+
+# Global timeout for all requests (milliseconds)
+default_timeout_ms: 30000
+
+# Enable periodic health checks
+enable_health_checks: true
+
+# Health check interval (seconds)
+health_check_interval_secs: 60
+
+# Hugging Face Inference API Configuration
+huggingface:
+  enabled: true
+  # API key (leave empty to use HF_API_KEY environment variable)
+  api_key: null
+  # Hugging Face API endpoint
+  endpoint: https://api-inference.huggingface.co
+  # Models to support
+  models:
+    - mistralai/Mistral-7B-Instruct-v0.2
+    - meta-llama/Llama-2-7b-hf
+    - NousResearch/Nous-Hermes-2-Mixtral-8x7B
+  # Request timeout
+  timeout_ms: 30000
+  # Max concurrent requests
+  max_concurrent_requests: 100
+  # Enable response caching
+  enable_cache: true
+  # Cache TTL (seconds)
+  cache_ttl_secs: 3600
+
+# vLLM Cluster Configuration
+vllm:
+  enabled: true
+  # vLLM endpoint URLs
+  endpoints:
+    - http://vllm-node-1:8000
+    - http://vllm-node-2:8000
+    - http://vllm-node-3:8000
+  # Models to support
+  models:
+    - mistralai/Mistral-7B-Instruct-v0.2
+    - meta-llama/Llama-2-7b-hf
+  # Request timeout
+  timeout_ms: 30000
+  # Max concurrent requests per endpoint
+  max_concurrent_requests: 1000
+  # Load balancing strategy: "round_robin", "least_loaded", "random"
+  load_balancing: least_loaded
+  # Enable connection pooling
+  enable_connection_pooling: true
+  # Connection pool size per endpoint
+  pool_size: 10
