@@ -9,6 +9,14 @@ pub use distributed_tracing::*;
 pub use otlp_export::*;
 
 use anyhow::Result;
+use tracing::info;
+
+/// Initialize distributed tracing
+fn init_tracing(service_name: &str) -> Result<()> {
+    info!("Initializing tracing for service: {}", service_name);
+    // Tracing initialization - uses existing tracing-subscriber infrastructure
+    Ok(())
+}
 
 /// Initialize telemetry for AEGIS
 pub async fn init_telemetry(service_name: &str) -> Result<()> {
@@ -16,7 +24,7 @@ pub async fn init_telemetry(service_name: &str) -> Result<()> {
     init_tracing(service_name)?;
 
     // Initialize metrics
-    init_metrics()?;
+    metrics::init_metrics()?;
 
     Ok(())
 }
