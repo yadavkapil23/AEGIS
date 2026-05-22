@@ -18,6 +18,7 @@ anyhow = "1"
 lru = "0.12"
 parking_lot = "0.12"
 thiserror = "1"
+dashmap = "5.5"
 
 # Security & Authentication
 jsonwebtoken = "9"
@@ -26,7 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Metrics & Observability
 prometheus = "0.13"
-opentelemetry = { version = "0.20", features = ["trace"] }
+opentelemetry = { version = "0.20", features = ["trace", "rt-tokio"] }
 opentelemetry-otlp = "0.13"
 tracing-opentelemetry = "0.21"
 
@@ -34,7 +35,7 @@ tracing-opentelemetry = "0.21"
 futures-util = "0.3"
 
 [build-dependencies]
-tonic-build = "0.10"
+tonic-build.workspace = true
 
 [[bin]]
 name = "gateway"
