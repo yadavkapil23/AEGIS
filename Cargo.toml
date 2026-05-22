@@ -13,6 +13,7 @@ members = [
     "inference-backends",
     "resilience",
     "observability",
+    "security",
 ]
 resolver = "2"
 
