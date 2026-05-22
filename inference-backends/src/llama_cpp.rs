@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Wrapper around llama.cpp safe interface
 pub struct LlamaCppBackend {
