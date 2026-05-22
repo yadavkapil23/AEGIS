@@ -1,0 +1,129 @@
+# Prometheus Alert Rules for AEGIS Gateway
+# Load with: --config.file=/path/to/prometheus.yml
+# Include in prometheus.yml: rule_files: ["prometheus_alerts.yml"]
+
+groups:
+  - name: aegis_inference_alerts
+    interval: 30s
+    rules:
+      # Alert: High error rate
+      - alert: HighInferenceErrorRate
+        expr: |
+          (rate(inference_errors_total[5m]) / rate(inference_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inference error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Alert: Circuit breaker open
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state == 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker is OPEN"
+          description: "Backend is failing. Circuit breaker opened at {{ $timestamp }}"
+
+      # Alert: High latency
+      - alert: HighInferenceLatency
+        expr: |
+          histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m])) > 1000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inference latency detected"
+          description: "P95 latency is {{ $value }}ms (threshold: 1000ms)"
+
+      # Alert: Rate limiting active
+      - alert: ActiveRateLimiting
+        expr: |
+          increase(rate_limited_requests_total[1m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rate limiting is active"
+          description: "{{ $value }} requests rate-limited in last minute"
+
+      # Alert: Bulkhead saturation
+      - alert: BulkheadSaturated
+        expr: |
+          (bulkhead_active_requests / bulkhead_max_slots) > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bulkhead near saturation"
+          description: "Bulkhead utilization is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # Alert: Cache hit ratio low
+      - alert: CacheHitRatioDegraded
+        expr: cache_hit_ratio_percent < 50
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Cache hit ratio is low"
+          description: "Hit ratio is {{ $value }}% (target: >70%)"
+
+      # Alert: Backend inference errors increasing
+      - alert: BackendErrorsIncreasing
+        expr: |
+          increase(inference_errors_total{error_type="backend_error"}[5m]) > 20
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend errors are increasing"
+          description: "{{ $value }} backend errors in last 5 minutes"
+
+      # Alert: Circuit breaker trips
+      - alert: CircuitBreakerTripsIncreasing
+        expr: |
+          increase(circuit_breaker_trips_total[5m]) > 3
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker is tripping repeatedly"
+          description: "{{ $value }} trips in last 5 minutes - backend may be unhealthy"
+
+  - name: aegis_gateway_health
+    interval: 30s
+    rules:
+      # Alert: No successful inferences in 5 minutes
+      - alert: NoSuccessfulInferences
+        expr: |
+          increase(inference_requests_total{status="success"}[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful inferences in 5 minutes"
+          description: "Gateway is not processing inference requests successfully"
+
+      # Alert: All models experiencing errors
+      - alert: AllModelsErroring
+        expr: |
+          count(increase(inference_errors_total[5m]) > 0) == count(increase(inference_requests_total[5m]) > 0)
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "All models are experiencing errors"
+          description: "All active models have error rate > 0"
+
+      # Alert: Zero requests
+      - alert: ZeroRequestTraffic
+        expr: |
+          increase(inference_requests_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No inference requests in 10 minutes"
+          description: "Gateway may be disconnected or traffic has stopped"
