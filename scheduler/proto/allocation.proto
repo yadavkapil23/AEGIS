@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package scheduler.allocation;
+
+// Allocation Service - gRPC service for KV cache allocation
+service AllocationService {
+  // Allocate blocks for a request
+  rpc AllocateBlocks(AllocateRequest) returns (AllocateResponse);
+  
+  // Deallocate previously allocated blocks
+  rpc DeallocateBlocks(DeallocateRequest) returns (DeallocateResponse);
+  
+  // Get cache statistics
+  rpc GetStats(StatsRequest) returns (StatsResponse);
+  
+  // Get cluster health status
+  rpc GetClusterHealth(HealthRequest) returns (HealthResponse);
+  
+  // Migrate block to another node
+  rpc MigrateBlock(MigrateRequest) returns (MigrateResponse);
+}
+
+// Request to allocate blocks
+message AllocateRequest {
+  // Request ID (unique identifier)
+  string request_id = 1;
+  
+  // Number of blocks to allocate
+  uint32 num_blocks = 2;
+  
+  // Owner of the blocks (optional)
+  string owner = 3;
+  
+  // Priority (0-10, default 5)
+  uint32 priority = 4;
+}
+
+// Response from allocation
+message AllocateResponse {
+  // Success status
+  bool success = 1;
+  
+  // Block IDs allocated
+  repeated uint64 block_ids = 2;
+  
+  // Error message if failed
+  string error = 3;
+  
+  // Latency in milliseconds
+  uint32 latency_ms = 4;
+  
+  // Node ID that performed allocation
+  string node_id = 5;
+}
+
+// Request to deallocate blocks
+message DeallocateRequest {
+  // Request ID (unique identifier)
+  string request_id = 1;
+  
+  // Block IDs to deallocate
+  repeated uint64 block_ids = 2;
+}
+
+// Response from deallocation
+message DeallocateResponse {
+  // Success status
+  bool success = 1;
+  
+  // Number of blocks deallocated
+  uint32 count = 2;
+  
+  // Error message if failed
+  string error = 3;
+  
+  // Latency in milliseconds
+  uint32 latency_ms = 4;
+}
+
+// Request for cache statistics
+message StatsRequest {
+}
+
+// Cache statistics response
+message StatsResponse {
+  // Total blocks available
+  uint64 total_blocks = 1;
+  
+  // Allocated blocks
+  uint64 allocated_blocks = 2;
+  
+  // Free blocks
+  uint64 free_blocks = 3;
+  
+  // Utilization percentage (0-100)
+  uint32 utilization_percent = 4;
+  
+  // Total allocations performed
+  uint64 total_allocations = 5;
+  
+  // Total deallocations performed
+  uint64 total_deallocations = 6;
+  
+  // Average latency in milliseconds
+  uint32 avg_latency_ms = 7;
+  
+  // Node ID
+  string node_id = 8;
+}
+
+// Request for cluster health
+message HealthRequest {
+}
+
+// Cluster health response
+message HealthResponse {
+  // Is cluster healthy
+  bool healthy = 1;
+  
+  // Total nodes in cluster
+  uint32 total_nodes = 2;
+  
+  // Healthy nodes count
+  uint32 healthy_nodes = 3;
+  
+  // Leader node ID
+  string leader_id = 4;
+  
+  // Nodes in cluster
+  repeated NodeInfo nodes = 5;
+  
+  // Cluster quorum status
+  string quorum_status = 6;
+}
+
+// Information about a node
+message NodeInfo {
+  // Node ID
+  string node_id = 1;
+  
+  // Is node healthy
+  bool healthy = 2;
+  
+  // Is node leader
+  bool is_leader = 3;
+  
+  // Cache utilization percentage
+  uint32 utilization_percent = 4;
+  
+  // Last heartbeat timestamp (Unix seconds)
+  uint64 last_heartbeat = 5;
+}
+
+// Request to migrate block
+message MigrateRequest {
+  // Block ID to migrate
+  uint64 block_id = 1;
+  
+  // Source node
+  string from_node = 2;
+  
+  // Target node
+  string to_node = 3;
+}
+
+// Response from migration
+message MigrateResponse {
+  // Success status
+  bool success = 1;
+  
+  // Block ID migrated
+  uint64 block_id = 2;
+  
+  // From node
+  string from_node = 3;
+  
+  // To node
+  string to_node = 4;
+  
+  // Error message if failed
+  string error = 5;
+}
