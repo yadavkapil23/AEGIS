@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, error};
 use crate::backend_manager::BackendManager;
 use crate::metrics::PrometheusMetrics;
+use crate::llm_backend::LLMBackend;
+use std::time::Instant;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InferenceRequest {
@@ -38,12 +40,16 @@ pub struct InferenceError {
 pub async fn infer_handler(
     req: web::Json<InferenceRequest>,
     _manager: web::Data<BackendManager>,
-    _metrics: web::Data<PrometheusMetrics>,
+    metrics: web::Data<PrometheusMetrics>,
+    llm_backend: web::Data<LLMBackend>,
 ) -> HttpResponse {
+    let start = Instant::now();
+
     // Validate request
     match validate_request(&req) {
         Err(e) => {
             error!("Invalid request: {}", e);
+            metrics.record_inference_error("validation_error");
             return HttpResponse::BadRequest().json(InferenceError {
                 error: e,
                 error_code: "invalid_request".to_string(),
@@ -52,24 +58,80 @@ pub async fn infer_handler(
         Ok(_) => {}
     }
 
-    // For now, return mock response
-    info!("Inference request: model={}, tokens={}", req.model, req.max_tokens);
+    info!(
+        "Inference request: model={}, prompt_len={}, max_tokens={}",
+        req.model,
+        req.prompt.len(),
+        req.max_tokens
+    );
 
-    HttpResponse::Ok().json(InferenceResponse {
-        success: true,
-        output: Some("Mock inference response".to_string()),
-        tokens_generated: 10,
-        latency_ms: 100,
-        error: None,
-    })
+    // Call real LLM backend (vLLM with fallback to llama.cpp)
+    match llm_backend
+        .infer(
+            &req.model,
+            &req.prompt,
+            req.max_tokens,
+            req.temperature,
+            req.top_p,
+        )
+        .await
+    {
+        Ok(result) => {
+            let latency_ms = start.elapsed().as_millis() as u32;
+
+            // Record metrics
+            metrics.record_inference_success(
+                &req.model,
+                latency_ms,
+                result.tokens_generated,
+            );
+
+            info!(
+                "Inference succeeded: model={}, backend={}, tokens={}, latency_ms={}",
+                req.model, result.backend, result.tokens_generated, latency_ms
+            );
+
+            HttpResponse::Ok().json(InferenceResponse {
+                success: true,
+                output: Some(result.output),
+                tokens_generated: result.tokens_generated,
+                latency_ms,
+                error: None,
+            })
+        }
+        Err(e) => {
+            error!("Inference failed: {}", e);
+            metrics.record_inference_error("inference_failed");
+
+            HttpResponse::InternalServerError().json(InferenceError {
+                error: format!("Inference failed: {}", e),
+                error_code: "inference_error".to_string(),
+            })
+        }
+    }
 }
 
 /// GET /health/ready - Readiness probe
 #[get("/health/ready")]
-pub async fn health_ready(_manager: web::Data<BackendManager>) -> HttpResponse {
+pub async fn health_ready(
+    _manager: web::Data<BackendManager>,
+    llm_backend: web::Data<LLMBackend>,
+) -> HttpResponse {
+    let vllm_healthy = llm_backend.check_vllm_health().await;
+    let llamacpp_healthy = llm_backend.check_llamacpp_health().await;
+
+    // Ready if at least one backend is healthy
+    let ready = vllm_healthy || llamacpp_healthy;
+
+    let status = if ready { "ready" } else { "not_ready" };
+
     HttpResponse::Ok().json(serde_json::json!({
-        "status": "ready",
-        "timestamp": chrono::Utc::now()
+        "status": status,
+        "timestamp": chrono::Utc::now(),
+        "backends": {
+            "vllm": vllm_healthy,
+            "llamacpp": llamacpp_healthy
+        }
     }))
 }
 
