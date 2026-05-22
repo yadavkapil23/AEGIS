@@ -58,3 +58,13 @@ message HealthCheckResponse {
     string status = 1; // SERVING, NOT_SERVING
     map<string, string> details = 2;
 }
+
+// ---------- InferenceService ----------
+// Main gRPC service for inference request handling
+service InferenceService {
+    // Infer: Generate tokens for given prompt (streaming response)
+    rpc Infer(InferenceRequest) returns (stream InferenceResponse);
+
+    // HealthCheck: Check service health and readiness
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
