@@ -1,8 +1,9 @@
 // Safe Rust wrapper around llama.cpp FFI bindings
 
 use crate::llama_cpp_sys as sys;
-use anyhow::{anyhow, Context, Result};
-use std::ffi::{CStr, CString};
+use anyhow::{anyhow, Result};
+use anyhow::Context as AnyhowContext;
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -19,7 +20,7 @@ impl Model {
         info!("Loading llama.cpp model from: {}", path);
 
         let path_cstr = CString::new(path)
-            .context("Failed to convert path to CString")?;
+            .with_context(|| anyhow::anyhow!("Failed to convert path to CString"))?;
 
         let mut params = unsafe { sys::llama_model_default_params() };
         params.n_gpu_layers = n_gpu_layers;
@@ -42,7 +43,7 @@ impl Model {
     /// Tokenize text
     pub fn tokenize(&self, text: &str, add_bos: bool) -> Result<Vec<i32>> {
         let text_cstr = CString::new(text)
-            .context("Failed to convert text to CString")?;
+            .with_context(|| anyhow::anyhow!("Failed to convert text to CString"))?;
 
         let max_tokens = text.len() as i32 * 2; // Safe upper bound
         let mut tokens = vec![0; max_tokens as usize];
@@ -100,8 +101,8 @@ impl Drop for Model {
     }
 }
 
-impl Send for Model {}
-impl Sync for Model {}
+unsafe impl Send for Model {}
+unsafe impl Sync for Model {}
 
 /// Safe wrapper for LlamaContext
 pub struct Context {
@@ -141,7 +142,7 @@ impl Context {
     }
 
     /// Run inference on tokens and get logits
-    pub fn eval(&mut self, tokens: &[i32], n_threads: i32) -> Result<()> {
+    pub fn eval(&mut self, tokens: &[i32], _n_threads: i32) -> Result<()> {
         debug!("Evaluating {} tokens", tokens.len());
 
         let mut batch = unsafe { sys::llama_batch_init(tokens.len() as i32, 0, 1) };
@@ -194,8 +195,8 @@ impl Drop for Context {
     }
 }
 
-impl Send for Context {}
-impl Sync for Context {}
+unsafe impl Send for Context {}
+unsafe impl Sync for Context {}
 
 /// Complete llama.cpp inference session
 pub struct Session {
