@@ -14,7 +14,6 @@ pub use llama_cpp_safe::Session;
 pub use mock::MockBackend;
 pub use metrics::BackendMetrics;
 
-use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Factory for creating inference backends
