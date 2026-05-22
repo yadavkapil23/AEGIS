@@ -19,8 +19,16 @@ pub mod state_machine_replication;
 pub mod state_machine_grpc;
 pub mod consensus_kv_cache;
 pub mod persistence;
+pub mod consensus_allocator;
+pub mod config;
+pub mod health;
+pub mod graceful_shutdown;
 
 pub use allocator::KVCacheAllocator;
+pub use config::SchedulerConfig as ConfigModule;
+pub use health::{HealthChecker, HealthStatus, HealthInfo, ReadinessStatus, ReadinessInfo};
+pub use graceful_shutdown::GracefulShutdown;
+pub use consensus_allocator::{ConsensusAllocator, AllocationCommand, CommandOutput, ConsensusAllocatorMetrics};
 pub use policy::EvictionPolicy;
 pub use metrics::SchedulerMetrics;
 pub use distributed::DistributedKVCache;
