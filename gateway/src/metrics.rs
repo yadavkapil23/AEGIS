@@ -1,12 +1,10 @@
 /// Gateway metrics with Prometheus integration
-/// Tracks inference performance, errors, rate limiting, and circuit breaker state
 
-use crate::rate_limiter::RateLimiter;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use prometheus::{
-    Counter, CounterVec, Histogram, HistogramVec, IntGauge, IntGaugeVec,
+    Counter, CounterVec, HistogramVec, IntGauge,
     Registry, TextEncoder, Encoder,
 };
 
@@ -221,33 +219,17 @@ impl Default for PrometheusMetrics {
     }
 }
 
-/// Legacy GatewayMetrics for backward compatibility
+/// GatewayMetrics for backward compatibility
 pub struct GatewayMetrics {
-    pub rate_limiter: Arc<RateLimiter>,
     pub prometheus: PrometheusMetrics,
-
-    // Legacy atomic counters
     total_requests: AtomicU64,
-    total_completed: AtomicU64,
-    total_failed: AtomicU64,
-    total_rate_limited: AtomicU64,
-    latencies_ms: Mutex<Vec<f64>>,
-    queue_depths: Mutex<Vec<usize>>,
-    active_streams: AtomicU64,
 }
 
 impl GatewayMetrics {
     pub fn new() -> Self {
         Self {
-            rate_limiter: Arc::new(RateLimiter::new(1000)),
             prometheus: PrometheusMetrics::default(),
             total_requests: AtomicU64::new(0),
-            total_completed: AtomicU64::new(0),
-            total_failed: AtomicU64::new(0),
-            total_rate_limited: AtomicU64::new(0),
-            latencies_ms: Mutex::new(Vec::new()),
-            queue_depths: Mutex::new(Vec::new()),
-            active_streams: AtomicU64::new(0),
         }
     }
 
