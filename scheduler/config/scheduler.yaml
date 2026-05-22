@@ -1,0 +1,78 @@
+# Scheduler Configuration (YAML)
+# This file is automatically loaded on startup
+
+# Server configuration
+server:
+  # Host to bind to
+  host: "0.0.0.0"
+  
+  # RPC port
+  port: 50051
+  
+  # gRPC port
+  grpc_port: 50052
+  
+  # Node ID (should be unique in cluster)
+  node_id: "node-1"
+  
+  # Graceful shutdown timeout in seconds
+  shutdown_timeout_secs: 30
+
+# Cache configuration
+cache:
+  # Total cache size in bytes (8GB default)
+  total_bytes: 8589934592
+  
+  # Block size in bytes (16KB default)
+  block_size_bytes: 16384
+  
+  # Eviction policy: "lru" or "lfu"
+  eviction_policy: "lru"
+  
+  # Enable predictive allocation
+  enable_predictive: true
+
+# Consensus configuration
+consensus:
+  # Cluster node IDs
+  cluster_nodes:
+    - "node-1"
+    - "node-2"
+    - "node-3"
+  
+  # Election timeout in milliseconds
+  election_timeout_ms: 150
+  
+  # Heartbeat interval in milliseconds
+  heartbeat_interval_ms: 50
+
+# Persistence configuration
+persistence:
+  # Enable persistence to disk
+  enabled: true
+  
+  # Data directory for snapshots and logs
+  data_dir: "./data"
+  
+  # Snapshot interval (number of commands before snapshot)
+  snapshot_interval: 10000
+  
+  # Sync mode: "async" or "sync"
+  sync_mode: "async"
+
+# Observability configuration
+observability:
+  # Log level: trace, debug, info, warn, error
+  log_level: "info"
+  
+  # Enable metrics export
+  metrics_enabled: true
+  
+  # Metrics port
+  metrics_port: 9090
+  
+  # Enable distributed tracing (OpenTelemetry)
+  tracing_enabled: false
+  
+  # OTLP endpoint for tracing
+  tracing_endpoint: "http://localhost:4317"
