@@ -23,6 +23,9 @@ prost.workspace = true
 aegis-telemetry = { path = "../telemetry" }
 aegis-proto = { path = "../proto" }
 
+[build-dependencies]
+tonic-build.workspace = true
+
 [dev-dependencies]
 criterion.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
