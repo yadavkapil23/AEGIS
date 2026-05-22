@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for AEGIS Gateway
 # Build stage: Compile Rust application
-FROM rust:1.75-slim as builder
+FROM rust:1.82-slim as builder
 
 WORKDIR /app
 
@@ -35,9 +35,9 @@ RUN useradd -m -u 1000 gateway
 COPY --from=builder /app/target/release/gateway /usr/local/bin/gateway
 
 # Copy config files
-COPY prometheus.yml /etc/prometheus/
-COPY prometheus_alerts.yml /etc/prometheus/
-COPY grafana_dashboard.json /etc/grafana/
+COPY gateway/prometheus.yml /etc/prometheus/
+COPY gateway/prometheus_alerts.yml /etc/prometheus/
+COPY gateway/grafana_dashboard.json /etc/grafana/
 
 # Create directories for backups and logs
 RUN mkdir -p /var/backups/aegis /var/log/aegis && \
