@@ -1,0 +1,36 @@
+[package]
+name = "resilience"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+tokio-util.workspace = true
+async-trait = "0.1"
+
+# Serialization
+serde = { workspace = true }
+serde_json.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Logging & Tracing
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Time handling
+chrono.workspace = true
+
+# Utilities
+dashmap.workspace = true
+parking_lot.workspace = true
+uuid.workspace = true
+
+# Testing
+[dev-dependencies]
+tokio-test = "0.4"
