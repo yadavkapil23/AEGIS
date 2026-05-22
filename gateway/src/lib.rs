@@ -15,6 +15,7 @@ pub use request_queue::RequestQueue;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::info;
+use tokio::net::TcpListener;
 
 /// GatewayConfig: configuration for the gateway
 #[derive(Debug, Clone)]
@@ -68,15 +69,38 @@ impl GatewayServer {
             .expect("Invalid listen address");
 
         info!(addr = %addr, "Starting AEGIS Gateway");
+
+        // Bind to the configured address
+        let listener = TcpListener::bind(addr).await?;
         info!("AEGIS Gateway listening on {}", addr);
 
-        // Gateway server running (mock implementation)
-        // Real gRPC service will be implemented in next phase
-        // For now, just keep the server alive
-        tokio::signal::ctrl_c().await?;
-        info!("Received shutdown signal, gracefully shutting down");
+        // Accept connections until shutdown signal
+        tokio::select! {
+            result = self.accept_connections(&listener) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received shutdown signal, gracefully shutting down");
+            }
+        }
 
         Ok(())
+    }
+
+    /// Accept and handle incoming connections
+    async fn accept_connections(&self, listener: &TcpListener) -> Result<()> {
+        loop {
+            match listener.accept().await {
+                Ok((_socket, peer_addr)) => {
+                    info!("Accepted connection from {}", peer_addr);
+                    // For now, just accept and close
+                    // Real gRPC handling will be implemented next
+                }
+                Err(e) => {
+                    tracing::error!("Accept error: {}", e);
+                }
+            }
+        }
     }
 
     pub fn metrics(&self) -> Arc<GatewayMetrics> {
