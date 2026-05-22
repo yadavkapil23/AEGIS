@@ -1,22 +1,57 @@
-FROM rust:1.75 as builder
+# Multi-stage Dockerfile for AEGIS Gateway
+# Build stage: Compile Rust application
+FROM rust:1.75-slim as builder
 
-WORKDIR /build
-RUN apt-get update && apt-get install -y protobuf-compiler
-COPY gateway /build
-RUN cargo build --release
+WORKDIR /app
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+COPY . .
+
+# Build release binary
+RUN cargo build --release --bin gateway
+
+# Runtime stage: Minimal production image
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-COPY --from=builder /build/target/release/gateway /app/gateway
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN useradd -m -u 1000 gateway
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/gateway /usr/local/bin/gateway
+
+# Copy config files
+COPY prometheus.yml /etc/prometheus/
+COPY prometheus_alerts.yml /etc/prometheus/
+COPY grafana_dashboard.json /etc/grafana/
+
+# Create directories for backups and logs
+RUN mkdir -p /var/backups/aegis /var/log/aegis && \
+    chown -R gateway:gateway /var/backups/aegis /var/log/aegis
+
+# Switch to non-root user
+USER gateway
+
+# Expose ports
 EXPOSE 8080
-ENV GATEWAY_HOST=0.0.0.0
-ENV GATEWAY_PORT=8080
-ENV GATEWAY_LOG_LEVEL=info
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health/live || exit 1
 
-CMD ["/app/gateway"]
+# Run gateway
+CMD ["gateway"]
