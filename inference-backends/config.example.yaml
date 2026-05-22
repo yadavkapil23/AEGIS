@@ -1,11 +1,14 @@
-# Inference Backends Configuration
+# Complete Inference Backends Configuration
+# Supports 3 backends: HuggingFace API, vLLM, and llama.cpp
 
-# Default backend preference: "auto", "huggingface", or "vllm"
+# Default backend preference: "auto", "huggingface", "vllm", or "llamacpp"
 default_preference: auto
 
-# Fallback order when a backend fails
+# Fallback order when backends fail
+# Try vLLM first (fast), then llama.cpp (local), then HF API (reliable)
 fallback_order:
   - vllm
+  - llamacpp
   - huggingface
 
 # Global timeout for all requests (milliseconds)
@@ -17,12 +20,14 @@ enable_health_checks: true
 # Health check interval (seconds)
 health_check_interval_secs: 60
 
-# Hugging Face Inference API Configuration
+# ============================================================================
+# 1. HUGGINGFACE INFERENCE API (Cloud-based, Managed)
+# ============================================================================
 huggingface:
   enabled: true
   # API key (leave empty to use HF_API_KEY environment variable)
   api_key: null
-  # Hugging Face API endpoint
+  # HuggingFace API endpoint
   endpoint: https://api-inference.huggingface.co
   # Models to support
   models:
@@ -38,10 +43,12 @@ huggingface:
   # Cache TTL (seconds)
   cache_ttl_secs: 3600
 
-# vLLM Cluster Configuration
+# ============================================================================
+# 2. VLLM CLUSTER (Self-hosted, Distributed, Fast)
+# ============================================================================
 vllm:
   enabled: true
-  # vLLM endpoint URLs
+  # vLLM endpoint URLs (can be multiple nodes)
   endpoints:
     - http://vllm-node-1:8000
     - http://vllm-node-2:8000
@@ -54,9 +61,36 @@ vllm:
   timeout_ms: 30000
   # Max concurrent requests per endpoint
   max_concurrent_requests: 1000
-  # Load balancing strategy: "round_robin", "least_loaded", "random"
+  # Load balancing: "round_robin", "least_loaded", or "random"
   load_balancing: least_loaded
   # Enable connection pooling
   enable_connection_pooling: true
   # Connection pool size per endpoint
   pool_size: 10
+
+# ============================================================================
+# 3. LLAMA.CPP (Local, Lightweight, CPU/GPU-friendly)
+# ============================================================================
+llamacpp:
+  enabled: true
+  # llama.cpp server endpoint (usually localhost:8080)
+  endpoint: http://localhost:8080
+  # Models to support (use model names/paths)
+  models:
+    - mistral-7b
+    - llama2-7b
+    - neural-chat
+  # Request timeout
+  timeout_ms: 30000
+  # Max concurrent requests
+  max_concurrent_requests: 50
+  # Enable GPU acceleration (if available)
+  gpu_enabled: true
+  # Number of GPU layers to use (-1 = all, 0 = CPU only, 1-33 = partial)
+  gpu_layers: 33
+  # Number of CPU threads
+  threads: 4
+  # Context size (tokens)
+  context_size: 4096
+  # Batch size for processing
+  batch_size: 512
