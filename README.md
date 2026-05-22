@@ -535,8 +535,7 @@ docker-compose down
 **Made with ❤️ for production AI inference at scale**
 
 [Getting Started](GETTING_STARTED.md) • [Full Docs](PROJECT_OVERVIEW.md) • [Architecture](ARCHITECTURE.md) • [Deploy](DEPLOYMENT.md)
-
-**Status**: ✅ Production Ready  
+ 
 **Version**: 1.0.0  
 **Last Updated**: 
 
