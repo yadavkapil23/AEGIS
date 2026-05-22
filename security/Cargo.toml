@@ -1,0 +1,53 @@
+[package]
+name = "security"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Authentication & Crypto
+jsonwebtoken = "9.2"
+jwt = "0.16"
+sha2 = { workspace = true }
+blake3 = { workspace = true }
+rand = { workspace = true }
+
+# Rate Limiting
+governor = "0.10"
+
+# TLS/mTLS
+tokio-rustls = "0.24"
+rustls = "0.21"
+rustls-pemfile = "2.0"
+
+# Async & Concurrency
+tokio = { workspace = true }
+async-trait = "0.1"
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+hex = "0.4"
+
+# Error Handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging/Tracing
+tracing = { workspace = true }
+
+# Testing
+mockall = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
