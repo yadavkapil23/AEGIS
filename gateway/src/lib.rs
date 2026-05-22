@@ -7,10 +7,20 @@ pub mod rate_limiter;
 pub mod metrics;
 pub mod request_queue;
 
-// Security modules
+// Security modules (Axum-based)
 pub mod credentials;
 pub mod middleware;
 pub mod api_key_handlers;
+
+// NEW: Actix-web security & operations modules
+pub mod jwt_auth;
+pub mod security_middleware;
+pub mod request_validator;
+pub mod db_migrations;
+pub mod backup;
+pub mod telemetry;
+pub mod backend_manager;
+pub mod inference_handler;
 
 // Re-exports
 pub use service::InferenceService;
