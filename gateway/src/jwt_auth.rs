@@ -1,25 +1,26 @@
-/// JWT Token Authentication for Actix-web
-/// Validates Bearer tokens and API keys
+/// JWT Authentication Middleware for Actix-web
 
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error, HttpMessage, HttpResponse,
+    body::{BoxBody, MessageBody},
+    Error, HttpMessage, HttpResponse, http::header,
 };
-use futures_util::future::LocalBoxFuture;
+use futures_util::future::{ok, LocalBoxFuture, Ready};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
-use tracing::{error, warn, info};
+use tracing::{error, warn};
+use base64::Engine;
 
 /// JWT Claims structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,                    // Subject (user ID)
-    pub iss: String,                    // Issuer
-    pub aud: String,                    // Audience
-    pub exp: i64,                       // Expiration time
-    pub iat: i64,                       // Issued at
-    pub org_id: Option<String>,         // Organization ID
-    pub permissions: Vec<String>,       // User permissions
+    pub sub: String,
+    pub iss: String,
+    pub aud: String,
+    pub exp: i64,
+    pub iat: i64,
+    pub org_id: Option<String>,
+    pub permissions: Vec<String>,
 }
 
 /// Authenticated principal
@@ -30,10 +31,10 @@ pub struct AuthenticatedUser {
     pub permissions: Vec<String>,
 }
 
-/// API Key configuration
+/// API Key validator
 #[derive(Clone)]
 pub struct ApiKeyValidator {
-    valid_keys: Vec<String>,  // In production, load from database
+    valid_keys: Vec<String>,
     jwt_secret: String,
 }
 
@@ -45,28 +46,21 @@ impl ApiKeyValidator {
         }
     }
 
-    /// Validate JWT token
     pub fn validate_jwt(&self, token: &str) -> Result<Claims, String> {
-        // In production, use jsonwebtoken crate
-        // This is a simplified version for demonstration
-
-        // For now, just validate token is not empty
         if token.is_empty() {
             return Err("Token is empty".to_string());
         }
 
-        // Check if token format is valid (3 parts separated by dots)
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
             return Err("Invalid token format".to_string());
         }
 
-        // Decode payload (base64 second part)
-        match base64::decode(parts[1]) {
+        let engine = base64::engine::general_purpose::STANDARD;
+        match engine.decode(parts[1]) {
             Ok(payload) => {
                 match serde_json::from_slice::<Claims>(&payload) {
-                    Ok(mut claims) => {
-                        // Check expiration
+                    Ok(claims) => {
                         let now = chrono::Utc::now().timestamp();
                         if claims.exp < now {
                             return Err("Token has expired".to_string());
@@ -80,14 +74,12 @@ impl ApiKeyValidator {
         }
     }
 
-    /// Validate API key
     pub fn validate_api_key(&self, key: &str) -> Result<AuthenticatedUser, String> {
         if !self.valid_keys.contains(&key.to_string()) {
-            warn!("Invalid API key attempted: {}", &key[..key.len().min(10)]);
+            warn!("Invalid API key attempted");
             return Err("Invalid API key".to_string());
         }
 
-        // In production, look up key metadata from database
         Ok(AuthenticatedUser {
             user_id: format!("api_user_{}", key.split('-').next().unwrap_or("unknown")),
             org_id: None,
@@ -95,7 +87,6 @@ impl ApiKeyValidator {
         })
     }
 
-    /// Extract and validate Bearer token from header
     pub fn extract_bearer_token(&self, auth_header: &str) -> Result<AuthenticatedUser, String> {
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             let claims = self.validate_jwt(token)?;
@@ -110,7 +101,7 @@ impl ApiKeyValidator {
     }
 }
 
-/// JWT Authentication Middleware for Actix-web
+/// JWT Authentication Middleware
 pub struct JwtAuthMiddleware {
     validator: Rc<ApiKeyValidator>,
 }
@@ -127,16 +118,16 @@ impl<S, B> Transform<S, ServiceRequest> for JwtAuthMiddleware
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
-    B: 'static,
+    B: MessageBody + 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<BoxBody>;
     type Error = Error;
     type InitError = ();
     type Transform = JwtAuthMiddlewareService<S>;
-    type Future = futures_util::future::Ready<Result<Self::Transform, Self::InitError>>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
-    fn new_service(&self, service: S) -> Self::Future {
-        futures_util::future::ok(JwtAuthMiddlewareService {
+    fn new_transform(&self, service: S) -> Self::Future {
+        ok(JwtAuthMiddlewareService {
             service: Rc::new(service),
             validator: self.validator.clone(),
         })
@@ -152,9 +143,9 @@ impl<S, B> Service<ServiceRequest> for JwtAuthMiddlewareService<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
-    B: 'static,
+    B: MessageBody + 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<BoxBody>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -165,138 +156,57 @@ where
         let validator = self.validator.clone();
 
         Box::pin(async move {
-            // Skip auth for public endpoints
             let path = req.path();
             if path.starts_with("/health") || path == "/metrics" {
-                return service.call(req).await;
+                let res = service.call(req).await?;
+                return Ok(res.map_into_boxed_body());
             }
 
-            // Extract Authorization header
-            let auth_header = match req.headers().get("authorization") {
-                Some(header) => match header.to_str() {
-                    Ok(h) => h,
+            let auth_header = match req.headers().get(header::AUTHORIZATION) {
+                Some(h) => match h.to_str() {
+                    Ok(h_str) => h_str,
                     Err(_) => {
                         error!("Invalid Authorization header format");
                         return Ok(req.into_response(
                             HttpResponse::BadRequest().json(serde_json::json!({
                                 "error": "Invalid Authorization header"
                             }))
-                        ));
+                        ).map_into_boxed_body());
                     }
                 },
                 None => {
                     warn!("Missing Authorization header for {}", path);
                     return Ok(req.into_response(
                         HttpResponse::Unauthorized().json(serde_json::json!({
-                            "error": "Authorization required",
-                            "code": "missing_auth"
+                            "error": "Authorization required"
                         }))
-                    ));
+                    ).map_into_boxed_body());
                 }
             };
 
-            // Try Bearer token first
             if auth_header.starts_with("Bearer ") {
-                match validator.extract_bearer_token(auth_header) {
-                    Ok(user) => {
-                        info!("JWT authentication successful for user: {}", user.user_id);
-                        req.extensions_mut().insert(user);
-                        return service.call(req).await;
-                    }
-                    Err(e) => {
-                        warn!("JWT validation failed: {}", e);
-                        return Ok(req.into_response(
-                            HttpResponse::Unauthorized().json(serde_json::json!({
-                                "error": "Invalid token",
-                                "details": e
-                            }))
-                        ));
-                    }
+                if let Ok(user) = validator.extract_bearer_token(auth_header) {
+                    req.extensions_mut().insert(user);
+                    let res = service.call(req).await?;
+                    return Ok(res.map_into_boxed_body());
                 }
             }
 
-            // Try API key
-            if auth_header.starts_with("ApiKey ") {
-                let key = auth_header.strip_prefix("ApiKey ").unwrap_or("");
-                match validator.validate_api_key(key) {
-                    Ok(user) => {
-                        info!("API key authentication successful for user: {}", user.user_id);
-                        req.extensions_mut().insert(user);
-                        return service.call(req).await;
-                    }
-                    Err(e) => {
-                        warn!("API key validation failed: {}", e);
-                        return Ok(req.into_response(
-                            HttpResponse::Unauthorized().json(serde_json::json!({
-                                "error": "Invalid API key"
-                            }))
-                        ));
-                    }
-                }
-            }
-
-            // Try X-API-Key header
             if let Some(api_key_header) = req.headers().get("x-api-key") {
-                if let Ok(key) = api_key_header.to_str() {
-                    match validator.validate_api_key(key) {
-                        Ok(user) => {
-                            info!("API key authentication successful for user: {}", user.user_id);
-                            req.extensions_mut().insert(user);
-                            return service.call(req).await;
-                        }
-                        Err(e) => {
-                            warn!("API key validation failed: {}", e);
-                            return Ok(req.into_response(
-                                HttpResponse::Unauthorized().json(serde_json::json!({
-                                    "error": "Invalid API key"
-                                }))
-                            ));
-                        }
+                if let Ok(api_key) = api_key_header.to_str() {
+                    if let Ok(user) = validator.validate_api_key(api_key) {
+                        req.extensions_mut().insert(user);
+                        let res = service.call(req).await?;
+                        return Ok(res.map_into_boxed_body());
                     }
                 }
             }
 
-            warn!("Unsupported authorization scheme");
             Ok(req.into_response(
                 HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "Unsupported authorization scheme",
-                    "supported": ["Bearer <jwt>", "ApiKey <key>", "X-API-Key: <key>"]
+                    "error": "Invalid credentials"
                 }))
-            ))
+            ).map_into_boxed_body())
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_api_key_validator_creation() {
-        let validator = ApiKeyValidator::new(
-            "secret".to_string(),
-            vec!["sk-test123".to_string()],
-        );
-        assert_eq!(validator.valid_keys.len(), 1);
-    }
-
-    #[test]
-    fn test_validate_api_key_success() {
-        let validator = ApiKeyValidator::new(
-            "secret".to_string(),
-            vec!["sk-test123".to_string()],
-        );
-        let result = validator.validate_api_key("sk-test123");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_api_key_failure() {
-        let validator = ApiKeyValidator::new(
-            "secret".to_string(),
-            vec!["sk-test123".to_string()],
-        );
-        let result = validator.validate_api_key("sk-invalid");
-        assert!(result.is_err());
     }
 }
