@@ -27,6 +27,7 @@ use metrics::PrometheusMetrics;
 use jwt_auth::{ApiKeyValidator, JwtAuthMiddleware};
 use security_middleware::{RateLimitMiddleware, SecurityHeadersMiddleware, RequestIdMiddleware};
 use db_migrations::MigrationManager;
+use llm_backend::LLMBackend;
 
 /// Gateway application state
 pub struct GatewayState {
@@ -99,6 +100,22 @@ async fn main() -> std::io::Result<()> {
     let backup_manager = backup::BackupManager::new(backup::BackupConfig::default());
     info!("Backup manager initialized");
 
+    // Initialize LLM backend (vLLM + llama.cpp)
+    let vllm_endpoint = std::env::var("VLLM_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:8000".to_string());
+    let llamacpp_endpoint = std::env::var("LLAMACPP_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:8001".to_string());
+
+    let llm_backend = web::Data::new(LLMBackend::new(
+        vllm_endpoint.clone(),
+        llamacpp_endpoint.clone(),
+        config.request_timeout_secs,
+    ));
+
+    info!("LLM Backend initialized:");
+    info!("  Primary (vLLM): {}", vllm_endpoint);
+    info!("  Fallback (llama.cpp): {}", llamacpp_endpoint);
+
     info!(
         "Starting AEGIS Gateway on http://{}:{}",
         config.host, config.port
@@ -131,6 +148,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(prometheus_metrics.clone())
             .app_data(backend_manager.clone())
             .app_data(api_key_validator.clone())
+            .app_data(llm_backend.clone())
             // Middleware stack (order matters!)
             .wrap(RequestIdMiddleware)                              // Tracing
             .wrap(middleware::Logger::default())                    // Logging
