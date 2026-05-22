@@ -1,0 +1,66 @@
+# Prometheus Configuration for AEGIS Gateway Observability
+# Start with: prometheus --config.file=prometheus.yml
+
+global:
+  scrape_interval: 15s          # Default interval to scrape targets
+  evaluation_interval: 15s       # How often to evaluate alert rules
+  external_labels:
+    monitor: 'aegis-gateway'
+    environment: 'production'
+
+# Alertmanager configuration (routes alerts to external systems)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - 'alertmanager:9093'  # Uncomment to enable alerting
+
+# Alert rules files
+rule_files:
+  - 'prometheus_alerts.yml'
+
+# Scrape configurations (defines what to monitor)
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # AEGIS Gateway inference metrics
+  - job_name: 'aegis-gateway'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:8080']
+        labels:
+          service: 'gateway'
+          component: 'inference-handler'
+
+  # Optional: vLLM backend metrics (if vLLM exposes Prometheus metrics)
+  - job_name: 'vllm-backend'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:8000']
+        labels:
+          service: 'backend'
+          backend: 'vllm'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'vllm_.*'
+        action: keep
+
+  # Optional: OpenTelemetry Collector (if using OTLP to Prometheus bridge)
+  - job_name: 'otel-collector'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:8888']
+        labels:
+          service: 'telemetry'
+          component: 'otel-collector'
+
+# Grafana datasource (if Grafana is on same network)
+# Configure in Grafana:
+#   URL: http://prometheus:9090
+#   Access: Browser
+#   Type: Prometheus
