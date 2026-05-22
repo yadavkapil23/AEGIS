@@ -5,22 +5,48 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-tokio.workspace = true
-tokio-util.workspace = true
-tonic.workspace = true
-prost.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-prometheus.workspace = true
-anyhow.workspace = true
-thiserror.workspace = true
-uuid.workspace = true
-chrono.workspace = true
-parking_lot.workspace = true
-dashmap.workspace = true
-reqwest = { version = "0.11", features = ["json"] }
+# Core
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+
+# Security
+security = { path = "../security" }
+
+# Observability
+observability = { path = "../observability" }
+
+# Logging & Metrics
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+prometheus = { workspace = true }
+
+# Web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors", "set-header"] }
+http = "1.0"
+hyper = "1.0"
+
+# Concurrency
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
 serde_json = "1.0"
 
+# HTTP Client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Utilities
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Proto
 aegis-proto = { path = "../proto" }
 aegis-telemetry = { path = "../telemetry" }
 
