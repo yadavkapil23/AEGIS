@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub struct InferenceService {
     queue: RequestQueue,
     metrics: Arc<GatewayMetrics>,
-    max_concurrent: usize,
+    backend: Arc<MultiBackendRouter>,  
 }
 
 impl InferenceService {
