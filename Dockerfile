@@ -1,60 +1,55 @@
-# Multi-stage Dockerfile for AEGIS Scheduler
-
-# Build stage
-FROM rust:1.75.0 as builder
+# Multi-stage Dockerfile for Aegis Scheduler
+# Stage 1: Builder
+FROM rust:1.75 as builder
 
 WORKDIR /build
 
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    cmake \
-    git \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
+# Copy workspace
 COPY . .
 
-# Build application
-ARG PROFILE=release
-RUN cargo build --${PROFILE} \
-    && mv target/${PROFILE}/aegis-scheduler /usr/local/bin/
+# Build scheduler
+RUN cargo build --release -p aegis-scheduler
 
-# Runtime stage
+# Stage 2: Runtime
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-    libssl3 \
     ca-certificates \
-    curl \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 -s /sbin/nologin aegis
-
-# Create data directories with correct permissions
-RUN mkdir -p /var/lib/aegis/{wal,snapshots} && \
-    chown -R aegis:aegis /var/lib/aegis && \
-    chmod 700 /var/lib/aegis
+WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /usr/local/bin/aegis-scheduler /usr/local/bin/
+COPY --from=builder /build/target/release/scheduler /app/scheduler
 
-# Set working directory
-WORKDIR /var/lib/aegis
+# Create data directory for persistence
+RUN mkdir -p /data
 
-# Switch to non-root user
-USER aegis
-
-# Health check
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Copy default config
+COPY scheduler/config/scheduler.yaml /app/config/scheduler.yaml
 
 # Expose ports
-EXPOSE 6000 8000
+EXPOSE 50051 50052 9090
 
-# Run application
-ENTRYPOINT ["/usr/local/bin/aegis-scheduler"]
-CMD []
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/app/scheduler", "health-check"]
+
+# Default environment
+ENV SCHEDULER_HOST=0.0.0.0
+ENV SCHEDULER_PORT=50051
+ENV SCHEDULER_GRPC_PORT=50052
+ENV SCHEDULER_METRICS_PORT=9090
+ENV SCHEDULER_LOG_LEVEL=info
+ENV SCHEDULER_DATA_DIR=/data
+
+# Run scheduler
+CMD ["/app/scheduler"]
