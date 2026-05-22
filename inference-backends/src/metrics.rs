@@ -2,7 +2,6 @@
 
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 /// Metrics for inference backend performance
 pub struct BackendMetrics {
