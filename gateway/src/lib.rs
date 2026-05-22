@@ -30,9 +30,8 @@ pub use metrics::GatewayMetrics;
 pub use request_queue::RequestQueue;
 
 // Security re-exports
-pub use credentials::{extract_credential, extract_client_ip, extract_request_id};
-pub use middleware::{auth_middleware, rate_limit_middleware, GatewayState};
-pub use api_key_handlers::*;
+pub use credentials::{extract_client_ip, extract_request_id, Credential};
+pub use middleware::GatewayState;
 
 use anyhow::Result;
 use std::sync::Arc;
