@@ -8,6 +8,18 @@ authors.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 tonic.workspace = true
+actix-web = "4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+
+# NEW - Add these:
+jsonwebtoken = "9"          # JWT validation
+uuid = { version = "1", features = ["v4", "serde"] }  # Request IDs
+chrono = { version = "0.4", features = ["serde"] }     # Timestamps
+base64 = "0.22"             # Token decoding
+parking_lot = "0.12"        # Fast mutex
+prometheus = "0.13"         # Metrics (if not present)
 
 [build-dependencies]
 prost-build = "0.12"
