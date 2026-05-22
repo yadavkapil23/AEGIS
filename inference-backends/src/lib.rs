@@ -3,12 +3,16 @@
 //! Provides abstraction layer for multiple inference backends:
 //! - Hugging Face Inference API (cloud-based)
 //! - vLLM (self-hosted distributed)
+//! - llama.cpp (lightweight local)
+//! - Mock Backend (testing only - generates fake tokens)
 //!
 //! Features automatic routing, fallback, and health checking
 
 pub mod config;
 pub mod error;
 pub mod huggingface;
+pub mod llamacpp;
+pub mod mock;
 pub mod models;
 pub mod router;
 pub mod traits;
@@ -17,6 +21,8 @@ pub mod vllm;
 pub use config::BackendConfig;
 pub use error::{BackendError, Result};
 pub use huggingface::HuggingFaceBackend;
+pub use llamacpp::LlamaCppBackend;
+pub use mock::MockBackend;
 pub use models::{BackendPreference, InferenceRequest, InferenceResponse};
 pub use router::BackendRouter;
 pub use traits::InferenceBackend;
@@ -26,6 +32,7 @@ pub use vllm::VLLMBackend;
 pub mod prelude {
     pub use crate::{
         BackendConfig, BackendError, BackendPreference, BackendRouter, HuggingFaceBackend,
-        InferenceBackend, InferenceRequest, InferenceResponse, Result, VLLMBackend,
+        InferenceBackend, InferenceRequest, InferenceResponse, LlamaCppBackend, MockBackend,
+        Result, VLLMBackend,
     };
 }
