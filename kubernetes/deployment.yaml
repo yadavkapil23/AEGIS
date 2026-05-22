@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scheduler
+  namespace: default
+  labels:
+    app: scheduler
+    version: v1
+spec:
+  serviceName: scheduler
+  replicas: 3
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Pod disruption policy for graceful shutdown
+      terminationGracePeriodSeconds: 30
+      
+      # Affinity rules to spread nodes across zones
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - scheduler
+                topologyKey: kubernetes.io/hostname
+      
+      containers:
+        - name: scheduler
+          image: scheduler:latest
+          imagePullPolicy: IfNotPresent
+          
+          # Resource limits and requests
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          
+          # Environment variables
+          env:
+            - name: SCHEDULER_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            
+            - name: SCHEDULER_HOST
+              value: "0.0.0.0"
+            
+            - name: SCHEDULER_PORT
+              value: "50051"
+            
+            - name: SCHEDULER_GRPC_PORT
+              value: "50052"
+            
+            - name: SCHEDULER_METRICS_PORT
+              value: "9090"
+            
+            - name: SCHEDULER_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: scheduler-config
+                  key: log-level
+            
+            - name: SCHEDULER_CLUSTER_NODES
+              value: "scheduler-0,scheduler-1,scheduler-2"
+            
+            - name: SCHEDULER_PERSISTENCE_ENABLED
+              value: "true"
+            
+            - name: SCHEDULER_DATA_DIR
+              value: "/data"
+            
+            - name: SCHEDULER_SNAPSHOT_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: scheduler-config
+                  key: snapshot-interval
+          
+          # Ports
+          ports:
+            - name: rpc
+              containerPort: 50051
+              protocol: TCP
+            - name: grpc
+              containerPort: 50052
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          
+          # Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Startup probe for slow-to-start containers
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
+          
+          # Volume mounts
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+  
+  # Persistent volume claim templates
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: standard
+  
+  # Pod management policy
+  podManagementPolicy: Parallel
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduler-config
+  namespace: default
+data:
+  log-level: "info"
+  snapshot-interval: "10000"
+  scheduler.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 50051
+      grpc_port: 50052
+      node_id: "node-1"
+      shutdown_timeout_secs: 30
+    
+    cache:
+      total_bytes: 8589934592
+      block_size_bytes: 16384
+      eviction_policy: "lru"
+      enable_predictive: true
+    
+    consensus:
+      cluster_nodes:
+        - "scheduler-0"
+        - "scheduler-1"
+        - "scheduler-2"
+      election_timeout_ms: 150
+      heartbeat_interval_ms: 50
+    
+    persistence:
+      enabled: true
+      data_dir: "/data"
+      snapshot_interval: 10000
+      sync_mode: "async"
+    
+    observability:
+      log_level: "info"
+      metrics_enabled: true
+      metrics_port: 9090
+      tracing_enabled: false
+      tracing_endpoint: "http://jaeger:14268/api/traces"
