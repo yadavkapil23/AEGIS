@@ -1,17 +1,16 @@
-// Request cache for gateway
+/// Request cache - Simplified
 
-use crate::AllocationResponse;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use parking_lot::Mutex;
+use serde_json::Value;
 
-/// Request cache to avoid duplicate allocations
+/// Request cache
 pub struct RequestCache {
-    cache: Mutex<LruCache<String, AllocationResponse>>,
+    cache: Mutex<LruCache<String, Value>>,
 }
 
 impl RequestCache {
-    /// Create new request cache
     pub fn new(capacity: usize) -> Self {
         let size = NonZeroUsize::new(capacity).unwrap_or_else(|| NonZeroUsize::new(100).unwrap());
         Self {
@@ -19,13 +18,11 @@ impl RequestCache {
         }
     }
 
-    /// Get cached response
-    pub fn get(&self, request_id: &str) -> Option<AllocationResponse> {
+    pub fn get(&self, request_id: &str) -> Option<Value> {
         self.cache.lock().get(request_id).cloned()
     }
 
-    /// Put response in cache
-    pub fn put(&self, request_id: String, response: AllocationResponse) {
+    pub fn put(&self, request_id: String, response: Value) {
         self.cache.lock().put(request_id, response);
     }
 
