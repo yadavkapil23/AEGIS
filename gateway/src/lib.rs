@@ -70,10 +70,49 @@ impl GatewayServer {
 
         info!(addr = %addr, "Starting AEGIS Gateway");
 
-        // TODO: Wire up actual service implementation
-        // For now, this is the skeleton structure
+        // Create gRPC service
+        let service = self.service.clone();
+        let inference_svc = aegis_proto::inference_service_server::InferenceServiceServer::new(service);
 
-        Ok(())
+        // Create graceful shutdown channel
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // Spawn server task
+        let server_task = tokio::spawn(async move {
+            Server::builder()
+                .add_service(inference_svc)
+                .serve_with_shutdown(addr, async {
+                    rx.await.ok();
+                })
+                .await
+        });
+
+        info!("AEGIS Gateway listening on {}", addr);
+
+        // Handle graceful shutdown
+        tokio::select! {
+            res = server_task => {
+                match res {
+                    Ok(Ok(())) => {
+                        info!("Gateway server shut down gracefully");
+                        Ok(())
+                    }
+                    Ok(Err(e)) => {
+                        tracing::error!("Gateway server error: {}", e);
+                        Err(e.into())
+                    }
+                    Err(e) => {
+                        tracing::error!("Gateway task error: {}", e);
+                        Err(e.into())
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received shutdown signal, gracefully shutting down");
+                let _ = tx.send(());
+                Ok(())
+            }
+        }
     }
 
     pub fn metrics(&self) -> Arc<GatewayMetrics> {
