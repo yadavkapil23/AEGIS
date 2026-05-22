@@ -1,73 +1,77 @@
 ---
-# Headless Service for StatefulSet DNS
+# Headless service for StatefulSet DNS
 apiVersion: v1
 kind: Service
 metadata:
-  name: aegis-scheduler
-  namespace: aegis
+  name: scheduler
+  namespace: default
   labels:
-    app: aegis-scheduler
+    app: scheduler
 spec:
   clusterIP: None
   selector:
-    app: aegis-scheduler
+    app: scheduler
   ports:
-    - name: consensus
-      port: 6000
-      targetPort: consensus
+    - name: rpc
+      port: 50051
+      targetPort: 50051
+      protocol: TCP
+    - name: grpc
+      port: 50052
+      targetPort: 50052
       protocol: TCP
     - name: metrics
-      port: 8000
-      targetPort: metrics
+      port: 9090
+      targetPort: 9090
       protocol: TCP
   publishNotReadyAddresses: true
 
 ---
-# Client-facing Service
+# Load balancer service for external access
 apiVersion: v1
 kind: Service
 metadata:
-  name: aegis-scheduler-client
-  namespace: aegis
+  name: scheduler-lb
+  namespace: default
   labels:
-    app: aegis-scheduler
-    role: client
+    app: scheduler
 spec:
   type: LoadBalancer
   selector:
-    app: aegis-scheduler
+    app: scheduler
   ports:
-    - name: consensus
-      port: 6000
-      targetPort: consensus
+    - name: rpc
+      port: 50051
+      targetPort: 50051
       protocol: TCP
-      nodePort: 30600
+    - name: grpc
+      port: 50052
+      targetPort: 50052
+      protocol: TCP
     - name: metrics
-      port: 8000
-      targetPort: metrics
+      port: 9090
+      targetPort: 9090
       protocol: TCP
-      nodePort: 30800
   sessionAffinity: ClientIP
   sessionAffinityConfig:
     clientIP:
       timeoutSeconds: 10800
 
 ---
-# Metrics Service for Prometheus
+# Service for metrics scraping
 apiVersion: v1
 kind: Service
 metadata:
-  name: aegis-scheduler-metrics
-  namespace: aegis
+  name: scheduler-metrics
+  namespace: default
   labels:
-    app: aegis-scheduler
-    role: metrics
+    app: scheduler
 spec:
   type: ClusterIP
   selector:
-    app: aegis-scheduler
+    app: scheduler
   ports:
     - name: metrics
-      port: 8000
-      targetPort: metrics
+      port: 9090
+      targetPort: 9090
       protocol: TCP
