@@ -1,5 +1,5 @@
-/// AEGIS Gateway - LLM Inference with Production Observability
-/// Real backends (vLLM, llama.cpp) with Prometheus metrics, OpenTelemetry tracing
+/// AEGIS Gateway - LLM Inference with Production Observability & Security
+/// Real backends (vLLM, llama.cpp) with metrics, tracing, JWT auth, rate limiting
 
 use actix_web::{web, App, HttpServer, middleware};
 use std::sync::Arc;
@@ -13,12 +13,20 @@ mod backend_manager;
 mod inference_handler;
 mod telemetry;
 mod metrics;
+mod jwt_auth;
+mod security_middleware;
+mod request_validator;
+mod db_migrations;
+mod backup;
 
 use allocation_client::AllocationClient;
 use config::GatewayConfig;
 use cache::RequestCache;
 use backend_manager::BackendManager;
 use metrics::PrometheusMetrics;
+use jwt_auth::{ApiKeyValidator, JwtAuthMiddleware};
+use security_middleware::{RateLimitMiddleware, SecurityHeadersMiddleware, RequestIdMiddleware};
+use db_migrations::MigrationManager;
 
 /// Gateway application state
 pub struct GatewayState {
@@ -70,21 +78,51 @@ async fn main() -> std::io::Result<()> {
         config: Arc::new(config.clone()),
     });
 
+    // Initialize JWT/API key validator
+    let api_keys = std::env::var("API_KEYS")
+        .unwrap_or_else(|_| "sk-demo123".to_string())
+        .split(',')
+        .map(|k| k.trim().to_string())
+        .collect();
+
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "change-me-in-production".to_string());
+
+    let api_key_validator = web::Data::new(ApiKeyValidator::new(jwt_secret, api_keys));
+    info!("JWT/API key validator initialized");
+
+    // Initialize migration manager
+    let migration_manager = MigrationManager::new("/var/lib/aegis/migrations");
+    info!("Database migration manager initialized");
+
+    // Initialize backup manager
+    let backup_manager = backup::BackupManager::new(backup::BackupConfig::default());
+    info!("Backup manager initialized");
+
     info!(
         "Starting AEGIS Gateway on http://{}:{}",
         config.host, config.port
     );
+    info!("Security Features:");
+    info!("  ✓ JWT token validation (Bearer)");
+    info!("  ✓ API key authentication (X-API-Key)");
+    info!("  ✓ Rate limiting (token bucket)");
+    info!("  ✓ CORS/CSRF protection");
+    info!("  ✓ Security headers (CSP, X-Frame-Options, etc.)");
+    info!("  ✓ Request validation (prompt, tokens, temperature)");
+    info!("");
     info!("Available endpoints:");
-    info!("  POST   /infer              - Run LLM inference");
+    info!("  POST   /infer              - Run LLM inference (requires auth)");
     info!("  GET    /health/live        - Liveness probe");
     info!("  GET    /health/ready       - Readiness probe");
     info!("  GET    /health/startup     - Startup probe");
     info!("  GET    /metrics            - Prometheus metrics");
     info!("");
-    info!("Observability:");
-    info!("  Prometheus (metrics):    http://localhost:9090");
-    info!("  Grafana (dashboards):    http://localhost:3000");
+    info!("Observability & Operations:");
+    info!("  Prometheus (metrics):      http://localhost:9090");
+    info!("  Grafana (dashboards):      http://localhost:3000");
     info!("  Jaeger (distributed trace): http://localhost:16686");
+    info!("  Backups stored in:         /var/backups/aegis");
 
     // Start HTTP server
     HttpServer::new(move || {
@@ -92,8 +130,18 @@ async fn main() -> std::io::Result<()> {
             .app_data(state.clone())
             .app_data(prometheus_metrics.clone())
             .app_data(backend_manager.clone())
-            .wrap(middleware::Logger::default())
-            .wrap(middleware::NormalizePath::trim())
+            .app_data(api_key_validator.clone())
+            // Middleware stack (order matters!)
+            .wrap(RequestIdMiddleware)                              // Tracing
+            .wrap(middleware::Logger::default())                    // Logging
+            .wrap(SecurityHeadersMiddleware)                         // Security headers
+            .wrap(RateLimitMiddleware::new(
+                config.rate_limit_rps as u32 * 60 / 1000,  // Convert to per-minute
+            ))                                                       // Rate limiting
+            .wrap(JwtAuthMiddleware::new(                           // Authentication
+                api_key_validator.get_ref().clone()
+            ))
+            .wrap(middleware::NormalizePath::trim())                // URL normalization
             // Inference endpoints
             .service(inference_handler::infer_handler)
             .service(inference_handler::health_live)
