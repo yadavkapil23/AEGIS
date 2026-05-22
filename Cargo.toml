@@ -11,6 +11,8 @@ members = [
     "proto",
     "benchmarks",
     "inference-backends",
+    "resilience",
+    "observability",
 ]
 resolver = "2"
 
