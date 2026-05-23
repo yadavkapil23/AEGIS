@@ -87,7 +87,7 @@ impl StateMachineGrpcService {
             req.term
         );
 
-        let my_id = self.coordinator.consensus().config().node_id.clone();
+        let my_id = self.coordinator.consensus().node_id().clone();
 
         // Append entries to log
         let mut last_lsn = 0;
@@ -118,7 +118,7 @@ impl StateMachineGrpcService {
             req.candidate_id, req.term
         );
 
-        let my_id = self.coordinator.consensus().config().node_id.clone();
+        let my_id = self.coordinator.consensus().node_id().clone();
         let current_term = self.coordinator.current_term();
 
         // If request term is older, reject
@@ -157,7 +157,7 @@ impl StateMachineGrpcService {
             req.leader_commit
         );
 
-        let my_id = self.coordinator.consensus().config().node_id.clone();
+        let my_id = self.coordinator.consensus().node_id().clone();
         let current_term = self.coordinator.current_term();
 
         // If request term is older, reject
@@ -236,14 +236,14 @@ impl StateMachineGrpcService {
     /// Get current state (for debugging)
     pub fn get_state_info(&self) -> StateInfo {
         StateInfo {
-            node_id: self.coordinator.consensus().config().node_id.clone(),
+            node_id: self.coordinator.consensus().node_id().clone(),
             is_leader: self.coordinator.is_leader(),
             current_term: self.coordinator.current_term(),
             log_len: self.coordinator.log_len(),
             commit_index: self.coordinator.commit_index(),
             last_applied: self.coordinator.last_applied(),
             applied_count: self.coordinator.applied_count(),
-            state_hash: format!("{:x}", self.coordinator.state_hash()),
+            state_hash: self.coordinator.state_hash().to_hex().to_string(),
         }
     }
 
