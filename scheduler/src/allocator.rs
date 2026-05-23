@@ -102,7 +102,7 @@ impl KVCacheAllocator {
         for _ in 0..num_blocks {
             if let Some(block_id) = free_list.pop_front() {
                 if let Some(mut block) = self.blocks.get_mut(&block_id) {
-                    block.allocated = true;
+                    block.lock().allocated = true;
                     allocated.push(block_id);
                 }
             }
@@ -120,8 +120,10 @@ impl KVCacheAllocator {
 
         for &block_id in block_ids {
             if let Some(mut block) = self.blocks.get_mut(&block_id) {
-                block.allocated = false;
-                block.owner = None;
+                let mut kb = block.lock();
+                kb.allocated = false;
+                kb.owner = None;
+                drop(kb);
                 free_list.push_back(block_id);
             }
         }
@@ -175,7 +177,8 @@ impl KVCacheAllocator {
     /// Mark block as owned by a request
     pub fn mark_owner(&self, block_id: usize, request_id: String) -> Result<()> {
         if let Some(mut block) = self.blocks.get_mut(&block_id) {
-            block.owner = Some(request_id);
+            let mut kb = block.lock();
+            kb.owner = Some(request_id);
             Ok(())
         } else {
             Err(anyhow!("Block not found"))
