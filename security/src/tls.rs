@@ -1,11 +1,11 @@
 //! TLS/mTLS configuration and setup
 
 use crate::error::{Result, SecurityError};
-use rustls::{ServerConfig, ClientConfig};
-use rustls_pemfile::{certs, private_keys};
+use rustls::ServerConfig;
+use rustls_pemfile::{certs, private_key};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::io::BufReader;
 use serde::{Deserialize, Serialize};
 
 /// TLS configuration
@@ -78,13 +78,18 @@ impl TlsServerConfig {
                 format!("Cannot open cert file: {}", e)
             ))?;
 
-        let mut cert_reader = std::io::BufReader::new(cert_file);
-        let certs = certs(&mut cert_reader)
+        let mut cert_reader = BufReader::new(cert_file);
+        let certs_iter = certs(&mut cert_reader);
+        let cert_chain: Vec<_> = certs_iter
+            .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|_| SecurityError::TlsConfigurationError(
-                "Invalid certificate format".to_string()
-            ))?;
+                "Invalid certificate format".to_string(),
+            ))?
+            .into_iter()
+            .map(|c| rustls::Certificate(c.as_ref().to_vec()))
+            .collect();
 
-        if certs.is_empty() {
+        if cert_chain.is_empty() {
             return Err(SecurityError::TlsConfigurationError(
                 "No certificates found in file".to_string(),
             ));
@@ -96,23 +101,20 @@ impl TlsServerConfig {
                 format!("Cannot open key file: {}", e)
             ))?;
 
-        let mut key_reader = std::io::BufReader::new(key_file);
-        let keys = private_keys(&mut key_reader)
+        let mut key_reader = BufReader::new(key_file);
+        let key = private_key(&mut key_reader)
             .map_err(|_| SecurityError::TlsConfigurationError(
                 "Invalid private key format".to_string()
+            ))?
+            .ok_or_else(|| SecurityError::TlsConfigurationError(
+                "No private key found in file".to_string(),
             ))?;
 
-        if keys.is_empty() {
-            return Err(SecurityError::TlsConfigurationError(
-                "No private keys found in file".to_string(),
-            ));
-        }
-
-        // Build server config
-        let mut server_config = ServerConfig::builder()
+        // Build server config - key is already PrivateKeyDer from private_key()
+        let server_config = ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(certs, keys[0].clone())
+            .with_single_cert(cert_chain, rustls::PrivateKey(key.secret_der().to_vec()))
             .map_err(|e| SecurityError::TlsConfigurationError(e.to_string()))?;
 
         // Enable mTLS if configured
@@ -123,8 +125,10 @@ impl TlsServerConfig {
                         format!("Cannot open CA cert file: {}", e)
                     ))?;
 
-                let mut ca_reader = std::io::BufReader::new(ca_file);
-                let ca_certs = certs(&mut ca_reader)
+                let mut ca_reader = BufReader::new(ca_file);
+                let ca_certs_iter = certs(&mut ca_reader);
+                let ca_certs: Vec<_> = ca_certs_iter
+                    .collect::<std::result::Result<Vec<_>, _>>()
                     .map_err(|_| SecurityError::TlsConfigurationError(
                         "Invalid CA certificate format".to_string()
                     ))?;
