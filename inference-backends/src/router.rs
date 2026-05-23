@@ -58,8 +58,22 @@ impl BackendRouter {
             None
         };
 
-        let llamacpp_backend = if let Some(llamacpp_config) = &config.llamacpp {
-            match LlamaCppBackend::new(llamacpp_config.clone()) {
+        let llamacpp_backend = if let Some(config_llamacpp) = &config.llamacpp {
+            // Convert from config::LlamaCppConfig to crate::llamacpp::LlamaCppConfig
+            let llamacpp_config = crate::llamacpp::LlamaCppConfig {
+                enabled: config_llamacpp.enabled,
+                endpoint: config_llamacpp.endpoint.clone(),
+                models: config_llamacpp.models.clone(),
+                timeout_ms: config_llamacpp.timeout_ms,
+                max_concurrent_requests: config_llamacpp.max_concurrent_requests,
+                gpu_enabled: config_llamacpp.gpu_enabled,
+                gpu_layers: config_llamacpp.gpu_layers,
+                threads: config_llamacpp.threads,
+                context_size: config_llamacpp.context_size,
+                batch_size: config_llamacpp.batch_size,
+            };
+
+            match crate::llamacpp::LlamaCppBackend::new(llamacpp_config) {
                 Ok(backend) => {
                     info!("llama.cpp backend initialized");
                     Some(Arc::new(backend))
