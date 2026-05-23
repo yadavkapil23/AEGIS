@@ -7,6 +7,7 @@ use tracing::{info, error};
 use crate::backend_manager::BackendManager;
 use crate::metrics::PrometheusMetrics;
 use crate::llm_backend::LLMBackend;
+use crate::database::DbPool;
 use std::time::Instant;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -42,6 +43,7 @@ pub async fn infer_handler(
     _manager: web::Data<BackendManager>,
     metrics: web::Data<PrometheusMetrics>,
     llm_backend: web::Data<LLMBackend>,
+    db: web::Data<DbPool>,
 ) -> HttpResponse {
     let start = Instant::now();
 
@@ -86,6 +88,25 @@ pub async fn infer_handler(
                 result.tokens_generated,
             );
 
+            // Log to database (async, non-blocking)
+            let db_clone = db.clone();
+            let model = req.model.clone();
+            let backend = result.backend.clone();
+            let tokens = result.tokens_generated;
+            tokio::spawn(async move {
+                if let Err(e) = crate::database::log_inference(
+                    &db_clone,
+                    &model,
+                    "success",
+                    latency_ms as i32,
+                    Some(tokens as i32),
+                    Some(&backend),
+                    None,
+                ).await {
+                    error!("Failed to log inference to database: {}", e);
+                }
+            });
+
             info!(
                 "Inference succeeded: model={}, backend={}, tokens={}, latency_ms={}",
                 req.model, result.backend, result.tokens_generated, latency_ms
@@ -100,8 +121,28 @@ pub async fn infer_handler(
             })
         }
         Err(e) => {
+            let latency_ms = start.elapsed().as_millis() as u32;
+
             error!("Inference failed: {}", e);
             metrics.record_inference_error("inference_failed");
+
+            // Log failure to database (async, non-blocking)
+            let db_clone = db.clone();
+            let model = req.model.clone();
+            let error_msg = e.clone();
+            tokio::spawn(async move {
+                if let Err(db_err) = crate::database::log_inference(
+                    &db_clone,
+                    &model,
+                    "failure",
+                    latency_ms as i32,
+                    None,
+                    None,
+                    Some(&error_msg),
+                ).await {
+                    error!("Failed to log inference failure to database: {}", db_err);
+                }
+            });
 
             HttpResponse::InternalServerError().json(InferenceError {
                 error: format!("Inference failed: {}", e),
