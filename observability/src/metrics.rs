@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use prometheus::{Counter, CounterVec, Gauge, GaugeVec, Histogram, HistogramVec, Registry};
+use prometheus::{Counter, CounterVec, Gauge, GaugeVec, HistogramVec, Registry, Opts, HistogramOpts, Encoder, TextEncoder};
 use std::sync::Arc;
 
 /// Prometheus metrics registry
@@ -40,17 +40,21 @@ impl MetricsRegistry {
         let registry = Registry::new();
 
         // Inference metrics
-        let inference_requests_total =
-            CounterVec::new("aegis_inference_requests_total", "Total inference requests")?;
+        let inference_requests_total = CounterVec::new(
+            Opts::new("aegis_inference_requests_total", "Total inference requests"),
+            &["model", "status"],
+        )?;
         registry.register(Box::new(inference_requests_total.clone()))?;
 
-        let inference_errors_total =
-            CounterVec::new("aegis_inference_errors_total", "Total inference errors")?;
+        let inference_errors_total = CounterVec::new(
+            Opts::new("aegis_inference_errors_total", "Total inference errors"),
+            &["error_type"],
+        )?;
         registry.register(Box::new(inference_errors_total.clone()))?;
 
         let inference_latency_ms = HistogramVec::new(
-            "aegis_inference_latency_ms",
-            "Inference latency in milliseconds",
+            HistogramOpts::new("aegis_inference_latency_ms", "Inference latency in milliseconds"),
+            &["model"],
         )?;
         registry.register(Box::new(inference_latency_ms.clone()))?;
 
@@ -61,53 +65,74 @@ impl MetricsRegistry {
         registry.register(Box::new(inference_tokens_generated.clone()))?;
 
         // Backend metrics
-        let backend_health = GaugeVec::new("aegis_backend_healthy", "Backend health status")?;
+        let backend_health = GaugeVec::new(
+            Opts::new("aegis_backend_healthy", "Backend health status"),
+            &["backend"],
+        )?;
         registry.register(Box::new(backend_health.clone()))?;
 
-        let backend_active_requests =
-            GaugeVec::new("aegis_backend_active_requests", "Active requests per backend")?;
+        let backend_active_requests = GaugeVec::new(
+            Opts::new("aegis_backend_active_requests", "Active requests per backend"),
+            &["backend"],
+        )?;
         registry.register(Box::new(backend_active_requests.clone()))?;
 
         let backend_latency_ms = HistogramVec::new(
-            "aegis_backend_latency_ms",
-            "Backend latency in milliseconds",
+            HistogramOpts::new("aegis_backend_latency_ms", "Backend latency in milliseconds"),
+            &["backend"],
         )?;
         registry.register(Box::new(backend_latency_ms.clone()))?;
 
         // Circuit breaker metrics
-        let circuit_breaker_state =
-            GaugeVec::new("aegis_circuit_breaker_state", "Circuit breaker state")?;
+        let circuit_breaker_state = GaugeVec::new(
+            Opts::new("aegis_circuit_breaker_state", "Circuit breaker state"),
+            &["backend"],
+        )?;
         registry.register(Box::new(circuit_breaker_state.clone()))?;
 
-        let circuit_breaker_failures_total =
-            CounterVec::new("aegis_circuit_breaker_failures_total", "Circuit breaker failures")?;
+        let circuit_breaker_failures_total = CounterVec::new(
+            Opts::new("aegis_circuit_breaker_failures_total", "Circuit breaker failures"),
+            &["backend"],
+        )?;
         registry.register(Box::new(circuit_breaker_failures_total.clone()))?;
 
-        let circuit_breaker_opens_total =
-            CounterVec::new("aegis_circuit_breaker_opens_total", "Circuit breaker opens")?;
+        let circuit_breaker_opens_total = CounterVec::new(
+            Opts::new("aegis_circuit_breaker_opens_total", "Circuit breaker opens"),
+            &["backend"],
+        )?;
         registry.register(Box::new(circuit_breaker_opens_total.clone()))?;
 
         // Retry metrics
-        let retry_attempts_total =
-            CounterVec::new("aegis_retry_attempts_total", "Total retry attempts")?;
+        let retry_attempts_total = CounterVec::new(
+            Opts::new("aegis_retry_attempts_total", "Total retry attempts"),
+            &["operation"],
+        )?;
         registry.register(Box::new(retry_attempts_total.clone()))?;
 
-        let retry_successes_total =
-            CounterVec::new("aegis_retry_successes_total", "Successful retries")?;
+        let retry_successes_total = CounterVec::new(
+            Opts::new("aegis_retry_successes_total", "Successful retries"),
+            &["operation"],
+        )?;
         registry.register(Box::new(retry_successes_total.clone()))?;
 
         // Timeout metrics
-        let timeout_errors_total =
-            Counter::new("aegis_timeout_errors_total", "Total timeout errors")?;
+        let timeout_errors_total = Counter::new(
+            "aegis_timeout_errors_total",
+            "Total timeout errors",
+        )?;
         registry.register(Box::new(timeout_errors_total.clone()))?;
 
         // Degradation metrics
-        let degradation_level =
-            Gauge::new("aegis_degradation_level", "Service degradation level")?;
+        let degradation_level = Gauge::new(
+            "aegis_degradation_level",
+            "Service degradation level",
+        )?;
         registry.register(Box::new(degradation_level.clone()))?;
 
-        let fallback_uses_total =
-            Counter::new("aegis_fallback_uses_total", "Total fallback uses")?;
+        let fallback_uses_total = Counter::new(
+            "aegis_fallback_uses_total",
+            "Total fallback uses",
+        )?;
         registry.register(Box::new(fallback_uses_total.clone()))?;
 
         Ok(Self {
@@ -132,12 +157,11 @@ impl MetricsRegistry {
 
     /// Get metrics in Prometheus format
     pub fn gather(&self) -> Result<String, Box<dyn std::error::Error>> {
-        use prometheus::TextEncoder;
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
-        Ok(encoder.encode(&metric_families, &mut Vec::new()).and_then(|v| {
-            String::from_utf8(v).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-        })?)
+        let mut buf = Vec::new();
+        encoder.encode(&metric_families, &mut buf)?;
+        Ok(String::from_utf8(buf)?)
     }
 }
 
