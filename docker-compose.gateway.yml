@@ -1,0 +1,225 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database for AEGIS Gateway
+  postgres:
+    image: postgres:15-alpine
+    container_name: aegis-postgres
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis_password
+      POSTGRES_DB: aegis_gateway
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aegis_network
+    command:
+      - "postgres"
+      - "-c"
+      - "log_statement=all"
+      - "-c"
+      - "max_connections=20"
+
+  # vLLM - LLM Inference Engine (Primary Backend)
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: aegis-vllm
+    environment:
+      - VLLM_PORT=8000
+      - VLLM_DISABLE_CUSTOM_ALL_REDUCE=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - aegis_network
+    command: >
+      --model meta-llama/Llama-2-7b-hf
+      --host 0.0.0.0
+      --port 8000
+      --dtype float16
+      --max-model-len 4096
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # llama.cpp - Alternative LLM Backend (Fallback)
+  llamacpp:
+    image: ghcr.io/ggerganov/llama.cpp:server-latest
+    container_name: aegis-llamacpp
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./models:/models:ro  # You need to download models manually
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - aegis_network
+    command: >
+      --listen 0.0.0.0
+      --port 8000
+      --model /models/mistral-7b.Q4_K_M.gguf
+      --ctx-size 2048
+      --threads 8
+    # Optional: Use GPU acceleration (requires CUDA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # AEGIS Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: aegis-gateway
+    environment:
+      # Gateway Configuration
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8080
+      GATEWAY_LOG_LEVEL: debug
+      GATEWAY_CACHE_SIZE: 1000
+      REQUEST_TIMEOUT_SECS: 30
+      RATE_LIMIT_RPS: 100
+
+      # Database Configuration (PostgreSQL)
+      DATABASE_URL: postgresql://aegis:aegis_password@postgres:5432/aegis_gateway
+
+      # LLM Backends
+      VLLM_ENDPOINT: http://vllm:8000
+      LLAMACPP_ENDPOINT: http://llamacpp:8000
+
+      # Authentication
+      API_KEYS: sk-demo123,sk-test456,sk-prod789
+      JWT_SECRET: your-jwt-secret-key-change-in-production
+
+      # Scheduler (optional)
+      SCHEDULER_NODES: http://scheduler-node-1:50052
+
+      # Tracing & Metrics
+      RUST_LOG: debug,sqlx=info
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      llamacpp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - aegis_network
+    restart: on-failure
+
+  # PostgreSQL Admin UI (optional, for development)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: aegis-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aegis.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - aegis_network
+    restart: on-failure
+
+  # Prometheus (optional, for monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aegis-prometheus
+    volumes:
+      - ./gateway/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - aegis_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: on-failure
+
+  # Grafana (optional, for dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aegis-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - aegis_network
+    restart: on-failure
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  huggingface_cache:
+
+networks:
+  aegis_network:
+    driver: bridge
+
+# Instructions:
+# 1. Download llama.cpp model (optional):
+#    mkdir -p models
+#    cd models
+#    wget https://huggingface.co/TheBloke/Mistral-7B-GGUF/resolve/main/mistral-7b.Q4_K_M.gguf
+#
+# 2. Start all services:
+#    docker-compose -f docker-compose.gateway.yml up
+#
+# 3. Wait for all services to be healthy (check: docker-compose -f docker-compose.gateway.yml ps)
+#
+# 4. Test gateway:
+#    curl -X POST http://localhost:8080/infer \
+#      -H "X-API-Key: sk-demo123" \
+#      -d '{"model":"llama-7b","prompt":"What is AI?","max_tokens":50}'
+#
+# 5. Access services:
+#    - Gateway: http://localhost:8080
+#    - PostgreSQL: localhost:5432 (user: aegis, password: aegis_password)
+#    - pgAdmin: http://localhost:5050 (admin@aegis.local / admin)
+#    - Prometheus: http://localhost:9090
+#    - Grafana: http://localhost:3000 (admin / admin)
