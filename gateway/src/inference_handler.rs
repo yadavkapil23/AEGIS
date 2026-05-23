@@ -123,9 +123,15 @@ pub async fn health_ready(
     // Ready if at least one backend is healthy
     let ready = vllm_healthy || llamacpp_healthy;
 
+    let status_code = if ready {
+        actix_web::http::StatusCode::OK
+    } else {
+        actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+    };
+
     let status = if ready { "ready" } else { "not_ready" };
 
-    HttpResponse::Ok().json(serde_json::json!({
+    HttpResponse::build(status_code).json(serde_json::json!({
         "status": status,
         "timestamp": chrono::Utc::now(),
         "backends": {
@@ -133,6 +139,13 @@ pub async fn health_ready(
             "llamacpp": llamacpp_healthy
         }
     }))
+}
+
+/// GET /backends/status - Get detailed backend status
+#[get("/backends/status")]
+pub async fn backends_status(llm_backend: web::Data<LLMBackend>) -> HttpResponse {
+    let status = llm_backend.get_backend_status().await;
+    HttpResponse::Ok().json(status)
 }
 
 /// GET /health/live - Liveness probe
