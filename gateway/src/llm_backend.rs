@@ -533,12 +533,12 @@ impl LLMBackend {
             vllm: BackendInfo {
                 endpoint: self.vllm_endpoint.clone(),
                 healthy: vllm_health,
-                circuit_breaker_state: self.vllm_circuit_breaker.get_state(),
+                circuit_breaker_state: self.vllm_circuit_breaker.get_state().to_string(),
             },
             llamacpp: BackendInfo {
                 endpoint: self.llamacpp_endpoint.clone(),
                 healthy: llamacpp_health,
-                circuit_breaker_state: self.llamacpp_circuit_breaker.get_state(),
+                circuit_breaker_state: self.llamacpp_circuit_breaker.get_state().to_string(),
             },
         }
     }
