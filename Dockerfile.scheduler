@@ -1,0 +1,32 @@
+# Multi-stage build for AEGIS Scheduler
+FROM rust:1.75 as builder
+
+WORKDIR /build
+
+COPY . .
+
+RUN cargo build --release -p aegis-scheduler
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /build/target/release/aegis-scheduler-node /app/scheduler
+
+RUN useradd -m -u 1000 aegis && chown -R aegis:aegis /app
+USER aegis
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:50051/health || exit 1
+
+EXPOSE 50051 9091
+
+CMD ["/app/scheduler"]
