@@ -1,6 +1,6 @@
 use crate::config::HuggingFaceConfig;
 use crate::error::{BackendError, Result};
-use crate::models::{HealthStatus, InferenceRequest, InferenceResponse, TokenProbability};
+use crate::models::{HealthStatus, InferenceRequest, InferenceResponse};
 use crate::traits::InferenceBackend;
 use async_trait::async_trait;
 use chrono::Utc;
