@@ -17,7 +17,7 @@ impl TimeoutHandler {
     }
 
     /// Execute operation with timeout
-    pub async fn execute<F, Fut, T>(&self, future: Fut) -> Result<T>
+    pub async fn execute<Fut, T>(&self, future: Fut) -> Result<T>
     where
         Fut: std::future::Future<Output = Result<T>>,
     {
@@ -26,7 +26,7 @@ impl TimeoutHandler {
     }
 
     /// Execute operation with custom timeout
-    pub async fn execute_with_timeout<F, Fut, T>(
+    pub async fn execute_with_timeout<Fut, T>(
         &self,
         future: Fut,
         timeout_duration: Duration,
