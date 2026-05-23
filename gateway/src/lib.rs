@@ -22,6 +22,7 @@ pub mod telemetry;
 pub mod backend_manager;
 pub mod inference_handler;
 pub mod llm_backend;
+pub mod database;
 
 // Re-exports
 pub use service::InferenceService;
