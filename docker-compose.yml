@@ -1,122 +1,134 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  scheduler-node-1:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: scheduler-node-1
+  postgres:
+    image: postgres:15-alpine
+    container_name: aegis-postgres
     environment:
-      SCHEDULER_NODE_ID: node-1
-      SCHEDULER_HOST: 0.0.0.0
-      SCHEDULER_PORT: 50051
-      SCHEDULER_GRPC_PORT: 50052
-      SCHEDULER_METRICS_PORT: 9090
-      SCHEDULER_LOG_LEVEL: debug
-      SCHEDULER_CLUSTER_NODES: "node-1,node-2,node-3"
-      SCHEDULER_PERSISTENCE_ENABLED: "true"
-      SCHEDULER_DATA_DIR: /data/node-1
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-aegis_gateway}
     ports:
-      - "50051:50051"
-      - "50052:50052"
-      - "9090:9090"
+      - "5432:5432"
     volumes:
-      - node1_data:/data/node-1
-      - ./scheduler/config:/app/config:ro
-    networks:
-      - scheduler_cluster
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/metrics"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegis-network
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: aegis-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aegis.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
     depends_on:
-      - scheduler-node-2
-      - scheduler-node-3
-
-  scheduler-node-2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: scheduler-node-2
-    environment:
-      SCHEDULER_NODE_ID: node-2
-      SCHEDULER_HOST: 0.0.0.0
-      SCHEDULER_PORT: 50051
-      SCHEDULER_GRPC_PORT: 50052
-      SCHEDULER_METRICS_PORT: 9090
-      SCHEDULER_LOG_LEVEL: debug
-      SCHEDULER_CLUSTER_NODES: "node-1,node-2,node-3"
-      SCHEDULER_PERSISTENCE_ENABLED: "true"
-      SCHEDULER_DATA_DIR: /data/node-2
-    ports:
-      - "50053:50051"
-      - "50054:50052"
-      - "9091:9090"
-    volumes:
-      - node2_data:/data/node-2
-      - ./scheduler/config:/app/config:ro
+      postgres:
+        condition: service_healthy
     networks:
-      - scheduler_cluster
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/metrics"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+      - aegis-network
+    restart: unless-stopped
 
-  scheduler-node-3:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: scheduler-node-3
-    environment:
-      SCHEDULER_NODE_ID: node-3
-      SCHEDULER_HOST: 0.0.0.0
-      SCHEDULER_PORT: 50051
-      SCHEDULER_GRPC_PORT: 50052
-      SCHEDULER_METRICS_PORT: 9090
-      SCHEDULER_LOG_LEVEL: debug
-      SCHEDULER_CLUSTER_NODES: "node-1,node-2,node-3"
-      SCHEDULER_PERSISTENCE_ENABLED: "true"
-      SCHEDULER_DATA_DIR: /data/node-3
+  redis:
+    image: redis:7-alpine
+    container_name: aegis-redis
     ports:
-      - "50055:50051"
-      - "50056:50052"
-      - "9092:9090"
+      - "6379:6379"
     volumes:
-      - node3_data:/data/node-3
-      - ./scheduler/config:/app/config:ro
-    networks:
-      - scheduler_cluster
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/metrics"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aegis-network
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: prometheus
+    container_name: aegis-prometheus
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     ports:
-      - "9000:9090"
-    networks:
-      - scheduler_cluster
+      - "9090:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+    networks:
+      - aegis-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aegis-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - aegis-network
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: aegis-gateway
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/aegis_gateway
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aegis-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: aegis-scheduler
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/aegis_gateway
+      RUST_LOG: info
+    ports:
+      - "50051:50051"
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aegis-network
+    restart: unless-stopped
 
 volumes:
-  node1_data:
-  node2_data:
-  node3_data:
+  postgres_data:
+  redis_data:
   prometheus_data:
+  grafana_data:
 
 networks:
-  scheduler_cluster:
+  aegis-network:
     driver: bridge
