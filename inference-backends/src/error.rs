@@ -38,6 +38,15 @@ pub enum BackendError {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
+
+    #[error("Inference error: {0}")]
+    InferenceError(String),
+
+    #[error("Rate limited")]
+    RateLimited,
+
+    #[error("Circuit breaker open")]
+    CircuitBreakerOpen,
 }
 
 pub type Result<T> = std::result::Result<T, BackendError>;
