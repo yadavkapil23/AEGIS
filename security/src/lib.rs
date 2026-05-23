@@ -49,7 +49,7 @@ pub mod error;
 pub use auth::{Principal, AuthenticationProvider, AuthMethod, Credential, MultiAuthProvider};
 pub use apikey::ApiKeyProvider;
 pub use jwt::{JwtProvider, TokenClaims, JwtConfig};
-pub use rate_limiter::{RateLimiter, RateLimiterStats, RateLimiterConfig};
+pub use rate_limiter::{RateLimiter, RateLimiterStats, RateLimitConfig};
 pub use tls::{TlsConfig, TlsServerConfig, CertificateValidator, CertificateInfo, TlsMetrics};
 pub use error::{SecurityError, Result};
 
