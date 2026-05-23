@@ -27,10 +27,12 @@ use metrics::PrometheusMetrics;
 use jwt_auth::{ApiKeyValidator, JwtAuthMiddleware};
 use security_middleware::{RateLimitMiddleware, SecurityHeadersMiddleware, RequestIdMiddleware};
 use db_migrations::MigrationManager;
-use database::DbPool;
 
 mod llm_backend;
 use llm_backend::LLMBackend;
+
+mod database;
+use database::DbPool;
 
 /// Gateway application state
 pub struct GatewayState {
