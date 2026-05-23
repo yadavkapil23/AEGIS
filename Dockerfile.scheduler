@@ -6,9 +6,12 @@ WORKDIR /build
 # Install protobuf compiler
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
+# Reduce parallel build jobs for Windows Docker Desktop stability
+ENV CARGO_BUILD_JOBS=2
+
 COPY . .
 
-RUN cargo build --release -p aegis-scheduler
+RUN cargo build --release -p aegis-scheduler -j 2
 
 # Runtime stage
 FROM debian:bookworm-slim
