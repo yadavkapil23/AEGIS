@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tracing::info;
 
 /// AuditEvent: a single event to be recorded
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AuditEvent {
     pub event_id: String,
     pub request_id: String,
