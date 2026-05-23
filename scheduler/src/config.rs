@@ -205,7 +205,7 @@ impl SchedulerConfig {
                 cluster_nodes: std::env::var("SCHEDULER_CLUSTER_NODES")
                     .ok()
                     .map(|nodes| nodes.split(',').map(|n| n.to_string()).collect())
-                    .unwrap_or_else(|_| default_cluster_nodes()),
+                    .unwrap_or_else(|| default_cluster_nodes()),
                 election_timeout_ms: std::env::var("SCHEDULER_ELECTION_TIMEOUT")
                     .ok()
                     .and_then(|t| t.parse().ok())
