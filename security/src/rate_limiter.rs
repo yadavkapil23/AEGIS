@@ -2,8 +2,12 @@
 
 use crate::error::{Result, SecurityError};
 use dashmap::DashMap;
-use governor::{Quota, RateLimiter};
+use governor::{Quota, RateLimiter as GovernorRateLimiter};
+use governor::state::{InMemoryState, NotKeyed};
+use governor::clock::DefaultClock;
 use std::num::NonZeroU32;
+
+type DirectRateLimiter = GovernorRateLimiter<NotKeyed, InMemoryState, DefaultClock>;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
@@ -45,7 +49,7 @@ impl Default for RateLimitConfig {
 
 /// Per-identity rate limiter
 struct IdentityLimiter {
-    limiter: RateLimiter,
+    limiter: DirectRateLimiter,
     created_at: DateTime<Utc>,
     request_count: Arc<std::sync::atomic::AtomicU64>,
 }
@@ -55,7 +59,7 @@ impl IdentityLimiter {
         let quota = Quota::per_second(
             NonZeroU32::new(rps).unwrap_or_else(|| NonZeroU32::new(1).unwrap()),
         );
-        let limiter = RateLimiter::direct(quota);
+        let limiter = GovernorRateLimiter::direct(quota);
 
         Self {
             limiter,
@@ -134,13 +138,19 @@ impl RateLimiter {
             return Ok(());
         }
 
-        let limiter = self.key_limiters
-            .entry(api_key_id.to_string())
-            .or_insert_with(|| IdentityLimiter::new(self.config.per_key_rps, self.config.burst_size))
-            .clone();
+        let allowed = {
+            let mut entry = self.key_limiters
+                .entry(api_key_id.to_string())
+                .or_insert_with(|| IdentityLimiter::new(self.config.per_key_rps, self.config.burst_size));
 
-        if limiter.check() {
-            limiter.record_request();
+            let is_allowed = entry.limiter.check().is_ok();
+            if is_allowed {
+                entry.record_request();
+            }
+            is_allowed
+        };
+
+        if allowed {
             Ok(())
         } else {
             self.rejected_requests
@@ -161,13 +171,19 @@ impl RateLimiter {
             return Ok(());
         }
 
-        let limiter = self.ip_limiters
-            .entry(ip_address.to_string())
-            .or_insert_with(|| IdentityLimiter::new(self.config.per_ip_rps, self.config.burst_size))
-            .clone();
+        let allowed = {
+            let mut entry = self.ip_limiters
+                .entry(ip_address.to_string())
+                .or_insert_with(|| IdentityLimiter::new(self.config.per_ip_rps, self.config.burst_size));
 
-        if limiter.check() {
-            limiter.record_request();
+            let is_allowed = entry.limiter.check().is_ok();
+            if is_allowed {
+                entry.record_request();
+            }
+            is_allowed
+        };
+
+        if allowed {
             Ok(())
         } else {
             self.rejected_requests
