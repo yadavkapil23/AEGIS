@@ -157,7 +157,7 @@ impl AuthenticationProvider for MultiAuthProvider {
 
     async fn validate(&self, principal: &Principal) -> Result<()> {
         // Validate based on which auth method was used
-        if let Some(key_id) = &principal.api_key_id {
+        if let Some(_key_id) = &principal.api_key_id {
             if let Some(provider) = &self.api_key_provider {
                 return provider.validate(principal).await;
             }
@@ -166,7 +166,7 @@ impl AuthenticationProvider for MultiAuthProvider {
     }
 
     async fn refresh(&self, principal: &Principal) -> Result<Credential> {
-        if let Some(key_id) = &principal.api_key_id {
+        if let Some(_key_id) = &principal.api_key_id {
             if let Some(provider) = &self.api_key_provider {
                 return provider.refresh(principal).await;
             }
