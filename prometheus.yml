@@ -1,53 +1,18 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
-  external_labels:
-    cluster: aegis-scheduler
-    environment: development
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: []
-
-rule_files:
-  # - "alert_rules.yml"
 
 scrape_configs:
-  # AEGIS Node 1
-  - job_name: 'aegis-node-1'
-    static_configs:
-      - targets: ['aegis-node-1:8000']
-        labels:
-          node_id: node-1
-          cluster: aegis-scheduler
-    scrape_interval: 10s
-    scrape_timeout: 5s
-    metrics_path: '/metrics'
-
-  # AEGIS Node 2
-  - job_name: 'aegis-node-2'
-    static_configs:
-      - targets: ['aegis-node-2:8000']
-        labels:
-          node_id: node-2
-          cluster: aegis-scheduler
-    scrape_interval: 10s
-    scrape_timeout: 5s
-    metrics_path: '/metrics'
-
-  # AEGIS Node 3
-  - job_name: 'aegis-node-3'
-    static_configs:
-      - targets: ['aegis-node-3:8000']
-        labels:
-          node_id: node-3
-          cluster: aegis-scheduler
-    scrape_interval: 10s
-    scrape_timeout: 5s
-    metrics_path: '/metrics'
-
-  # Prometheus self-monitoring
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+
+  - job_name: 'aegis-gateway'
+    static_configs:
+      - targets: ['gateway:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'aegis-scheduler'
+    static_configs:
+      - targets: ['scheduler:9091']
+    metrics_path: '/metrics'
