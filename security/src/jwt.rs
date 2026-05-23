@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use std::sync::Arc;
 
 /// JWT claims
 #[derive(Debug, Clone, Serialize, Deserialize)]
