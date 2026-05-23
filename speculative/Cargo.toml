@@ -13,6 +13,7 @@ uuid.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
 serde.workspace = true
+rand.workspace = true
 
 aegis-proto = { path = "../proto" }
 aegis-telemetry = { path = "../telemetry" }
