@@ -103,6 +103,11 @@ impl QuorumConsensus {
         self.state.lock().clone()
     }
 
+    /// Get node ID
+    pub fn node_id(&self) -> &NodeId {
+        &self.config.node_id
+    }
+
     /// Get current term
     pub fn current_term(&self) -> Term {
         self.current_term.load(Ordering::SeqCst)
@@ -207,7 +212,7 @@ impl QuorumConsensus {
     }
 
     /// Record heartbeat from leader
-    pub fn heartbeat_received(&self) -> {
+    pub fn heartbeat_received(&self) {
         self.last_heartbeat.store(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
