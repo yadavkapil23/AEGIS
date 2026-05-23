@@ -77,7 +77,7 @@ pub fn create_span(name: &str, attributes: &[(&str, &str)]) -> tracing::Span {
     );
 
     for (key, value) in attributes {
-        span.record(key, value);
+        span.record(*key, *value);
     }
 
     span
