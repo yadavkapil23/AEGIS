@@ -108,18 +108,22 @@ impl ConsensusKVCache {
     }
 
     /// Apply pending allocations to state machine and KV cache
-    pub fn apply_pending_allocations(&self) -> Result<usize> {
+    pub async fn apply_pending_allocations(&self) -> Result<usize> {
         let applied_count = self.coordinator.apply_pending()?;
 
         debug!("Applied {} pending allocations", applied_count);
 
         // Process applied allocations in KV cache
-        let pending = self.pending_requests.lock();
-        for req in pending.iter() {
+        let pending_reqs: Vec<_> = {
+            let pending = self.pending_requests.lock();
+            pending.iter().cloned().collect()
+        };
+        for req in pending_reqs {
             // Perform actual allocation in KV cache
             match self
                 .kv_cache
-                .allocate_blocks(&req.request_id, req.num_blocks)
+                .allocate_global(&req.request_id, req.num_blocks)
+                .await
             {
                 Ok(block_ids) => {
                     info!(
@@ -170,12 +174,12 @@ impl ConsensusKVCache {
 
     /// Get state hash for consistency verification
     pub fn state_hash(&self) -> String {
-        format!("{:x}", self.coordinator.state_hash())
+        self.coordinator.state_hash().to_hex().to_string()
     }
 
     /// Get KV cache statistics
-    pub fn cache_stats(&self) -> crate::allocator::CacheStats {
-        self.kv_cache.stats()
+    pub fn cache_stats(&self) -> Result<crate::allocator::CacheStats> {
+        Ok(self.kv_cache.local_stats())
     }
 
     /// Verify consistency: state machine hash should match across nodes
@@ -269,8 +273,8 @@ mod tests {
         assert_eq!(alloc.lsn, 1);
     }
 
-    #[test]
-    fn test_commit_and_apply() {
+    #[tokio::test]
+    async fn test_commit_and_apply() {
         let cache = create_consensus_kv_cache();
 
         // Become leader
@@ -289,7 +293,7 @@ mod tests {
         cache.commit_allocation(alloc.lsn).ok();
 
         // Apply
-        let applied = cache.apply_pending_allocations().unwrap();
+        let applied = cache.apply_pending_allocations().await.unwrap();
         assert_eq!(applied, 1);
 
         // Verify in state
@@ -297,8 +301,8 @@ mod tests {
         assert!(status.is_some());
     }
 
-    #[test]
-    fn test_state_hash_verification() {
+    #[tokio::test]
+    async fn test_state_hash_verification() {
         let cache = create_consensus_kv_cache();
 
         // Become leader
@@ -315,7 +319,7 @@ mod tests {
         // Allocate and apply
         let alloc = cache.allocate("req-1", 100).unwrap();
         cache.commit_allocation(alloc.lsn).ok();
-        cache.apply_pending_allocations().ok();
+        cache.apply_pending_allocations().await.ok();
 
         let hash2 = cache.state_hash();
         assert_ne!(hash1, hash2); // Should change after allocation
