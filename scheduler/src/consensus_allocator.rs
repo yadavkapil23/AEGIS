@@ -375,7 +375,7 @@ impl ConsensusAllocator {
 
     /// Get cache statistics
     pub fn stats(&self) -> Result<CacheStats> {
-        self.local_allocator.stats()
+        Ok(self.local_allocator.stats())
     }
 
     /// Get allocation state
