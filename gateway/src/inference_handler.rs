@@ -160,9 +160,11 @@ pub async fn health_ready(
 ) -> HttpResponse {
     let vllm_healthy = llm_backend.check_vllm_health().await;
     let llamacpp_healthy = llm_backend.check_llamacpp_health().await;
+    let ollama_healthy = llm_backend.check_ollama_health().await;
+    let hf_healthy = llm_backend.check_hf_health().await;
 
     // Ready if at least one backend is healthy
-    let ready = vllm_healthy || llamacpp_healthy;
+    let ready = vllm_healthy || llamacpp_healthy || ollama_healthy || hf_healthy;
 
     let status_code = if ready {
         actix_web::http::StatusCode::OK
@@ -177,7 +179,9 @@ pub async fn health_ready(
         "timestamp": chrono::Utc::now(),
         "backends": {
             "vllm": vllm_healthy,
-            "llamacpp": llamacpp_healthy
+            "llamacpp": llamacpp_healthy,
+            "ollama": ollama_healthy,
+            "huggingface": hf_healthy
         }
     }))
 }
