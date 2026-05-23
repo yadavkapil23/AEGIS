@@ -182,17 +182,17 @@ impl RemoteAllocator {
         self.record_failure().ok();
 
         // Check if we have cached capacity info, but still fail if not connected
-        let capacity = self.known_capacity.lock();
-        if let Some(cap) = capacity.as_ref() {
-            if !cap.is_stale() && cap.free_blocks >= num_blocks {
-                drop(capacity);
-                warn!(
-                    "Using cached capacity but gRPC unavailable for {} - failing allocation",
-                    self.node_id
-                );
+        {
+            let capacity = self.known_capacity.lock();
+            if let Some(cap) = capacity.as_ref() {
+                if !cap.is_stale() && cap.free_blocks >= num_blocks {
+                    warn!(
+                        "Using cached capacity but gRPC unavailable for {} - failing allocation",
+                        self.node_id
+                    );
+                }
             }
         }
-        drop(capacity);
 
         // Fail explicitly - don't return fake block IDs
         Err(anyhow!(
