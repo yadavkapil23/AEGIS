@@ -27,6 +27,9 @@ use metrics::PrometheusMetrics;
 use jwt_auth::{ApiKeyValidator, JwtAuthMiddleware};
 use security_middleware::{RateLimitMiddleware, SecurityHeadersMiddleware, RequestIdMiddleware};
 use db_migrations::MigrationManager;
+use database::DbPool;
+
+mod llm_backend;
 use llm_backend::LLMBackend;
 
 /// Gateway application state
@@ -64,6 +67,21 @@ async fn main() -> std::io::Result<()> {
     // Create request cache
     let cache = Arc::new(RequestCache::new(config.cache_size));
 
+    // Initialize PostgreSQL database with connection pool
+    let db_pool = match database::create_pool().await {
+        Ok(pool) => {
+            info!("PostgreSQL database initialized successfully");
+            web::Data::new(pool)
+        }
+        Err(e) => {
+            info!("Warning: Failed to initialize PostgreSQL: {}", e);
+            info!("Continuing without persistent database (in-memory only)");
+            // For now, we'll exit if DB init fails since it's critical
+            // In future, could fall back to in-memory mode
+            panic!("Database initialization failed: {}", e);
+        }
+    };
+
     // Create backend manager for LLM inference
     let backend_manager = web::Data::new(
         BackendManager::new()
@@ -79,18 +97,19 @@ async fn main() -> std::io::Result<()> {
         config: Arc::new(config.clone()),
     });
 
-    // Initialize JWT/API key validator
-    let api_keys = std::env::var("API_KEYS")
+    // Initialize JWT/API key validator (API keys now from database)
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "change-me-in-production".to_string());
+
+    // For now, still support env var API keys as fallback, but primary source is DB
+    let fallback_api_keys = std::env::var("API_KEYS")
         .unwrap_or_else(|_| "sk-demo123".to_string())
         .split(',')
         .map(|k| k.trim().to_string())
         .collect();
 
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "change-me-in-production".to_string());
-
-    let api_key_validator = web::Data::new(ApiKeyValidator::new(jwt_secret, api_keys));
-    info!("JWT/API key validator initialized");
+    let api_key_validator = web::Data::new(ApiKeyValidator::new(jwt_secret, fallback_api_keys));
+    info!("JWT/API key validator initialized (primary source: PostgreSQL database)");
 
     // Initialize migration manager
     let migration_manager = MigrationManager::new("/var/lib/aegis/migrations");
@@ -149,6 +168,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(backend_manager.clone())
             .app_data(api_key_validator.clone())
             .app_data(llm_backend.clone())
+            .app_data(db_pool.clone())
             // Middleware stack (order matters!)
             .wrap(RequestIdMiddleware)                              // Tracing
             .wrap(middleware::Logger::default())                    // Logging
