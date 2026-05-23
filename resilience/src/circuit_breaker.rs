@@ -103,7 +103,7 @@ impl CircuitBreaker {
                             self.config.name
                         );
                         *self.state.write() = CircuitState::HalfOpen;
-                        *self.success_count.load(Ordering::Relaxed) as u32; // Reset for half-open
+                        self.success_count.store(0, Ordering::Relaxed);
                         Ok(())
                     } else {
                         Err(ResilienceError::CircuitBreakerOpen {
@@ -125,7 +125,7 @@ impl CircuitBreaker {
 
         match state {
             CircuitState::Closed => {
-                let succ = self.success_count.fetch_add(1, Ordering::Relaxed);
+                let _succ = self.success_count.fetch_add(1, Ordering::Relaxed);
                 let req = self.request_count.fetch_add(1, Ordering::Relaxed);
 
                 // Check if we should close if there are failures
@@ -137,7 +137,7 @@ impl CircuitBreaker {
                 let succ = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
 
                 // Check if we've had enough successes to close
-                if succ >= self.config.success_threshold {
+                if succ >= self.config.success_threshold as u64 {
                     debug!(
                         "{}: Recovered to Closed state after {} successes",
                         self.config.name, succ
@@ -160,7 +160,7 @@ impl CircuitBreaker {
 
         match state {
             CircuitState::Closed => {
-                let failures = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
+                let _failures = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
                 let requests = self.request_count.fetch_add(1, Ordering::Relaxed) + 1;
 
                 *self.last_failure_time.write() = Some(Utc::now());
