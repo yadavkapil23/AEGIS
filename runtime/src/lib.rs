@@ -82,8 +82,13 @@ impl AEGISRuntime {
             event_id: uuid::Uuid::new_v4().to_string(),
             request_id: request_id.clone(),
             event_type: "REQUEST_RECEIVED".to_string(),
-            payload: serde_json::to_string(&request)?,
-            timestamp_ns: chrono::Utc::now().timestamp_nanos() as u64,
+            payload: serde_json::json!({
+                "request_id": request.request_id,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "enable_speculation": request.enable_speculation
+            }).to_string(),
+            timestamp_ns: chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
         };
 
         self.audit.record(event)?;
