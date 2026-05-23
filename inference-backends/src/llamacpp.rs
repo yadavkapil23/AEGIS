@@ -1,11 +1,9 @@
-use crate::config::VLLMConfig;
 use crate::error::{BackendError, Result};
 use crate::models::{HealthStatus, InferenceRequest, InferenceResponse};
 use crate::traits::InferenceBackend;
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
