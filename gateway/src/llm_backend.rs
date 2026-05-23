@@ -80,6 +80,32 @@ pub struct LlamaCppSettings {
     pub top_p: f32,
 }
 
+/// HuggingFace Inference API request
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HFRequest {
+    pub inputs: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<HFParameters>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HFParameters {
+    pub max_length: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+}
+
+/// HuggingFace Inference API response
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HFResponse {
+    #[serde(default)]
+    pub generated_text: Option<String>,
+    #[serde(default)]
+    pub summary_text: Option<String>,
+}
+
 /// Unified LLM response
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
@@ -173,26 +199,47 @@ impl CircuitBreaker {
 pub struct LLMBackend {
     vllm_endpoint: String,
     llamacpp_endpoint: String,
+    ollama_endpoint: String,
+    hf_api_endpoint: String,
+    hf_api_key: Option<String>,
     client: Arc<Client>,
     timeout_secs: u64,
     vllm_circuit_breaker: Arc<CircuitBreaker>,
     llamacpp_circuit_breaker: Arc<CircuitBreaker>,
+    ollama_circuit_breaker: Arc<CircuitBreaker>,
+    hf_circuit_breaker: Arc<CircuitBreaker>,
 }
 
 impl LLMBackend {
     pub fn new(vllm_endpoint: String, llamacpp_endpoint: String, timeout_secs: u64) -> Self {
+        let hf_api_key = std::env::var("HUGGINGFACE_API_KEY").ok();
+        let hf_api_endpoint = std::env::var("HUGGINGFACE_ENDPOINT")
+            .unwrap_or_else(|_| "https://api-inference.huggingface.co/models".to_string());
+        let ollama_endpoint = std::env::var("OLLAMA_ENDPOINT")
+            .unwrap_or_else(|_| "http://aegis-ollama:11434".to_string());
+
         info!("Initializing LLM Backend");
         info!("  vLLM endpoint: {}", vllm_endpoint);
         info!("  llama.cpp endpoint: {}", llamacpp_endpoint);
+        info!("  Ollama endpoint: {}", ollama_endpoint);
+        info!("  HuggingFace API: {} ({})",
+            hf_api_endpoint,
+            if hf_api_key.is_some() { "configured" } else { "not configured" }
+        );
         info!("  Timeout: {} seconds", timeout_secs);
 
         Self {
             vllm_endpoint,
             llamacpp_endpoint,
+            ollama_endpoint,
+            hf_api_endpoint,
+            hf_api_key,
             client: Arc::new(Client::new()),
             timeout_secs,
             vllm_circuit_breaker: Arc::new(CircuitBreaker::new(5, 3)), // 5 failures, 3 successes to recover
             llamacpp_circuit_breaker: Arc::new(CircuitBreaker::new(5, 3)),
+            ollama_circuit_breaker: Arc::new(CircuitBreaker::new(5, 3)),
+            hf_circuit_breaker: Arc::new(CircuitBreaker::new(5, 3)),
         }
     }
 
@@ -230,7 +277,7 @@ impl LLMBackend {
         }
     }
 
-    /// Execute inference with vLLM, fallback to llama.cpp
+    /// Execute inference with vLLM, fallback to llama.cpp, then ollama
     /// Uses circuit breaker pattern and retry logic
     pub async fn infer(
         &self,
@@ -279,12 +326,58 @@ impl LLMBackend {
                 }
                 Err(e) => {
                     self.llamacpp_circuit_breaker.record_failure();
-                    error!("llama.cpp inference failed: {}", e);
+                    warn!("llama.cpp inference failed: {}, falling back to ollama", e);
                 }
             }
         } else {
-            warn!("llama.cpp circuit breaker is open");
+            warn!("llama.cpp circuit breaker is open, trying ollama");
             self.llamacpp_circuit_breaker.test_recovery();
+        }
+
+        // Fallback to Ollama (OpenAI-compatible API)
+        if self.ollama_circuit_breaker.allow_request() {
+            match self.ollama_infer(model, prompt, max_tokens, temperature, top_p).await {
+                Ok(mut result) => {
+                    self.ollama_circuit_breaker.record_success();
+                    result.latency_ms = start.elapsed().as_millis() as u64;
+                    info!(
+                        "Ollama inference succeeded: tokens={}, latency_ms={}",
+                        result.tokens_generated, result.latency_ms
+                    );
+                    return Ok(result);
+                }
+                Err(e) => {
+                    self.ollama_circuit_breaker.record_failure();
+                    warn!("Ollama inference failed: {}, falling back to HuggingFace API", e);
+                }
+            }
+        } else {
+            warn!("Ollama circuit breaker is open, trying HuggingFace API");
+            self.ollama_circuit_breaker.test_recovery();
+        }
+
+        // Fallback to HuggingFace Inference API (cloud-based)
+        if self.hf_api_key.is_some() && self.hf_circuit_breaker.allow_request() {
+            match self.hf_infer(model, prompt, max_tokens, temperature, top_p).await {
+                Ok(mut result) => {
+                    self.hf_circuit_breaker.record_success();
+                    result.latency_ms = start.elapsed().as_millis() as u64;
+                    info!(
+                        "HuggingFace API inference succeeded: tokens={}, latency_ms={}",
+                        result.tokens_generated, result.latency_ms
+                    );
+                    return Ok(result);
+                }
+                Err(e) => {
+                    self.hf_circuit_breaker.record_failure();
+                    error!("HuggingFace API inference failed: {}", e);
+                }
+            }
+        } else if self.hf_api_key.is_none() {
+            debug!("HuggingFace API not configured (HUGGINGFACE_API_KEY not set)");
+        } else {
+            warn!("HuggingFace API circuit breaker is open");
+            self.hf_circuit_breaker.test_recovery();
         }
 
         error!("All inference backends failed or unavailable");
@@ -472,6 +565,210 @@ impl LLMBackend {
         result
     }
 
+    /// Call Ollama backend (OpenAI-compatible API) with retry logic
+    async fn ollama_infer(
+        &self,
+        model: &str,
+        prompt: &str,
+        max_tokens: u32,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+    ) -> Result<InferenceResult, String> {
+        let start = Instant::now();
+
+        // Validate inputs
+        if prompt.is_empty() {
+            return Err("Prompt cannot be empty".to_string());
+        }
+        if max_tokens == 0 {
+            return Err("max_tokens must be greater than 0".to_string());
+        }
+
+        let request = VLLMRequest {
+            prompt: prompt.to_string(),
+            max_tokens,
+            temperature,
+            top_p,
+            model: Some(model.to_string()),
+            stream: false,
+        };
+
+        let url = format!("{}/v1/completions", self.ollama_endpoint);
+        info!("Calling Ollama: {}", url);
+        debug!("Ollama Request: model={}, max_tokens={}, has_temperature={}", model, max_tokens, temperature.is_some());
+
+        // Retry logic with exponential backoff
+        let result = self.retry_request(
+            || async {
+                debug!("Sending request to Ollama...");
+                let response = self
+                    .client
+                    .post(&url)
+                    .json(&request)
+                    .timeout(Duration::from_secs(self.timeout_secs))
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        if e.is_timeout() {
+                            format!("Ollama request timeout ({} seconds)", self.timeout_secs)
+                        } else {
+                            format!("Ollama request failed: {}", e)
+                        }
+                    })?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    return Err(format!("Ollama returned status {}: {}", status, error_text));
+                }
+
+                debug!("Ollama returned success status");
+                let ollama_response: VLLMResponse = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
+
+                // Extract output from first choice
+                let output = ollama_response
+                    .choices
+                    .first()
+                    .and_then(|choice| choice.text.clone())
+                    .ok_or_else(|| {
+                        format!(
+                            "No output in Ollama response (choices: {})",
+                            ollama_response.choices.len()
+                        )
+                    })?;
+
+                if output.is_empty() {
+                    return Err("Ollama returned empty output".to_string());
+                }
+
+                let latency_ms = start.elapsed().as_millis() as u64;
+
+                Ok(InferenceResult {
+                    output,
+                    tokens_generated: ollama_response.usage.completion_tokens,
+                    prompt_tokens: ollama_response.usage.prompt_tokens,
+                    total_tokens: ollama_response.usage.total_tokens,
+                    backend: "Ollama".to_string(),
+                    latency_ms,
+                })
+            },
+            3, // Max 3 retries
+        )
+        .await;
+
+        result
+    }
+
+    /// Call HuggingFace Inference API with retry logic
+    async fn hf_infer(
+        &self,
+        model: &str,
+        prompt: &str,
+        max_tokens: u32,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+    ) -> Result<InferenceResult, String> {
+        let start = Instant::now();
+
+        // Validate inputs
+        if prompt.is_empty() {
+            return Err("Prompt cannot be empty".to_string());
+        }
+        if max_tokens == 0 {
+            return Err("max_tokens must be greater than 0".to_string());
+        }
+
+        let request = HFRequest {
+            inputs: prompt.to_string(),
+            parameters: Some(HFParameters {
+                max_length: Some(max_tokens),
+                temperature,
+                top_p,
+            }),
+        };
+
+        let url = format!("{}/{}", self.hf_api_endpoint, model);
+        info!("Calling HuggingFace API: {}", url);
+        debug!("HF Request: model={}, max_tokens={}, has_temperature={}", model, max_tokens, temperature.is_some());
+
+        // Retry logic with exponential backoff
+        let result = self.retry_request(
+            || async {
+                debug!("Sending request to HuggingFace API...");
+                let mut request = self
+                    .client
+                    .post(&url)
+                    .json(&request)
+                    .timeout(Duration::from_secs(self.timeout_secs));
+
+                // Add Authorization header if API key is present
+                if let Some(api_key) = &self.hf_api_key {
+                    request = request.bearer_auth(api_key);
+                }
+
+                let response = request
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        if e.is_timeout() {
+                            format!("HuggingFace API request timeout ({} seconds)", self.timeout_secs)
+                        } else {
+                            format!("HuggingFace API request failed: {}", e)
+                        }
+                    })?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    return Err(format!("HuggingFace API returned status {}: {}", status, error_text));
+                }
+
+                debug!("HuggingFace API returned success status");
+                let hf_response_array: Vec<HFResponse> = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse HuggingFace API response: {}", e))?;
+
+                // Extract output from first response
+                let hf_response = hf_response_array
+                    .first()
+                    .ok_or_else(|| "No response from HuggingFace API".to_string())?;
+
+                let output = hf_response
+                    .generated_text
+                    .clone()
+                    .or_else(|| hf_response.summary_text.clone())
+                    .ok_or_else(|| "No output in HuggingFace API response".to_string())?;
+
+                if output.is_empty() {
+                    return Err("HuggingFace API returned empty output".to_string());
+                }
+
+                let latency_ms = start.elapsed().as_millis() as u64;
+
+                // Estimate token counts (rough approximation)
+                let prompt_tokens = (prompt.len() / 4) as u32;
+                let completion_tokens = (output.len() / 4) as u32;
+
+                Ok(InferenceResult {
+                    output,
+                    tokens_generated: completion_tokens,
+                    prompt_tokens,
+                    total_tokens: prompt_tokens + completion_tokens,
+                    backend: "HuggingFace".to_string(),
+                    latency_ms,
+                })
+            },
+            3, // Max 3 retries
+        )
+        .await;
+
+        result
+    }
+
     /// Check if vLLM is healthy
     pub async fn check_vllm_health(&self) -> bool {
         let url = format!("{}/health", self.vllm_endpoint);
@@ -524,10 +821,51 @@ impl LLMBackend {
         }
     }
 
+    /// Check if Ollama is healthy
+    pub async fn check_ollama_health(&self) -> bool {
+        let url = format!("{}/api/tags", self.ollama_endpoint);
+        match self
+            .client
+            .get(&url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let healthy = resp.status().is_success();
+                if healthy {
+                    info!("Ollama health check: OK");
+                } else {
+                    warn!("Ollama health check failed: {}", resp.status());
+                }
+                healthy
+            }
+            Err(e) => {
+                warn!("Ollama health check error: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Check if HuggingFace API is accessible
+    pub async fn check_hf_health(&self) -> bool {
+        // HF API health check just verifies we have an API key
+        // (can't really health-check the endpoint without making a request)
+        if self.hf_api_key.is_some() {
+            info!("HuggingFace API health check: OK (API key configured)");
+            true
+        } else {
+            debug!("HuggingFace API not configured (no API key)");
+            false
+        }
+    }
+
     /// Get status of all backends
     pub async fn get_backend_status(&self) -> BackendStatus {
         let vllm_health = self.check_vllm_health().await;
         let llamacpp_health = self.check_llamacpp_health().await;
+        let ollama_health = self.check_ollama_health().await;
+        let hf_health = self.check_hf_health().await;
 
         BackendStatus {
             vllm: BackendInfo {
@@ -540,6 +878,16 @@ impl LLMBackend {
                 healthy: llamacpp_health,
                 circuit_breaker_state: self.llamacpp_circuit_breaker.get_state().to_string(),
             },
+            ollama: BackendInfo {
+                endpoint: self.ollama_endpoint.clone(),
+                healthy: ollama_health,
+                circuit_breaker_state: self.ollama_circuit_breaker.get_state().to_string(),
+            },
+            huggingface: BackendInfo {
+                endpoint: self.hf_api_endpoint.clone(),
+                healthy: hf_health,
+                circuit_breaker_state: self.hf_circuit_breaker.get_state().to_string(),
+            },
         }
     }
 }
@@ -549,6 +897,8 @@ impl LLMBackend {
 pub struct BackendStatus {
     pub vllm: BackendInfo,
     pub llamacpp: BackendInfo,
+    pub ollama: BackendInfo,
+    pub huggingface: BackendInfo,
 }
 
 /// Individual backend information
