@@ -6,7 +6,7 @@ use crate::models::InferenceResponse;
 use crate::traits::InferenceBackend;
 use crate::error::Result;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Instant, Duration};
 use tokio::sync::RwLock;
 use tracing::{warn, error, info, debug};
@@ -213,7 +213,7 @@ impl Bulkhead {
         }
     }
 
-    pub async fn acquire(&self) -> Result<tokio::sync::SemaphorePermit<'static>> {
+    pub async fn acquire(&self) -> Result<tokio::sync::SemaphorePermit<'_>> {
         self.semaphore.acquire().await.map_err(|e| {
             crate::error::BackendError::InferenceError(format!("Bulkhead limit exceeded: {}", e))
         })
