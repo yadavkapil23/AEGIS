@@ -62,7 +62,8 @@ impl SpeculativeCoordinator {
         self.metrics.record_draft_length(draft_length);
 
         if let Some(mut branch) = self.branches.get_mut(request_id) {
-            branch.add_draft_tokens(tokens.clone())?;
+            let mut exec_branch = branch.lock();
+            exec_branch.add_draft_tokens(tokens.clone())?;
         }
 
         Ok(tokens)
@@ -93,7 +94,8 @@ impl SpeculativeCoordinator {
     /// Handle rollback on verification failure
     pub fn rollback(&self, request_id: &str, to_token: u32) -> Result<()> {
         if let Some(mut branch) = self.branches.get_mut(request_id) {
-            branch.rollback_to(to_token as usize)?;
+            let mut exec_branch = branch.lock();
+            exec_branch.rollback_to(to_token as usize)?;
             self.metrics.record_rollback();
             info!(request_id = request_id, to_token = to_token, "Rollback");
         }
@@ -103,7 +105,8 @@ impl SpeculativeCoordinator {
     /// Commit accepted tokens
     pub fn commit(&self, request_id: &str, num_tokens: usize) -> Result<()> {
         if let Some(mut branch) = self.branches.get_mut(request_id) {
-            branch.commit(num_tokens)?;
+            let mut exec_branch = branch.lock();
+            exec_branch.commit(num_tokens)?;
         }
         Ok(())
     }
