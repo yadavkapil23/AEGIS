@@ -166,6 +166,7 @@ async fn main() -> std::io::Result<()> {
             .service(inference_handler::health_ready)
             .service(inference_handler::health_startup)
             .service(inference_handler::metrics_handler)
+            .service(inference_handler::backends_status)
             // Legacy allocation endpoints
             .route("/health", web::get().to(handlers::health_check))
             .route("/ready", web::get().to(handlers::readiness_check))
