@@ -13,6 +13,9 @@ rand.workspace = true
 aegis-runtime = { path = "../runtime" }
 aegis-proto = { path = "../proto" }
 aegis-scheduler = { path = "../scheduler" }
+aegis-speculative = { path = "../speculative" }
+aegis-audit = { path = "../audit" }
+inference-backends = { path = "../inference-backends" }
 
 [[bench]]
 name = "e2e_inference"
