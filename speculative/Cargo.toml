@@ -17,3 +17,4 @@ rand.workspace = true
 
 aegis-proto = { path = "../proto" }
 aegis-telemetry = { path = "../telemetry" }
+inference-backends = { path = "../inference-backends" }
