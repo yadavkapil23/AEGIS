@@ -77,4 +77,4 @@ If you are building Agentic AI, latency is the biggest bottleneck. Because AEGIS
 
 - **[x] Phase 1**: Core Gateway, Router Logic, Authentication, and Simulated Execution.
 - **[x] Phase 2**: Native C++ Integration, Speculative Decoding, KV-Cache Physical Management, and Merkle Auditing.
-- **[ ] Phase 3**: **Distributed Runtime Architecture**. Implementing Raft consensus and gRPC networking to scale AEGIS horizontally across a cluster of multiple physical machines for Zero-Downtime High Availability.
+
