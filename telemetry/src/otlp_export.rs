@@ -1,8 +1,13 @@
-// OpenTelemetry OTLP Exporter (stub)
+// OpenTelemetry OTLP Exporter
 // Exports traces and metrics to OTLP-compatible collectors
 
 use anyhow::Result;
-use std::sync::Arc;
+use opentelemetry::global;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace as sdktrace;
+use opentelemetry_sdk::Resource;
+use opentelemetry::KeyValue;
+
 use tracing::info;
 
 /// OTLP exporter configuration
@@ -24,7 +29,35 @@ impl Default for OtlpExporterConfig {
 }
 
 /// Initialize OTLP exporter
-pub fn init_otlp_exporter(_config: OtlpExporterConfig) -> Result<()> {
-    info!("OTLP exporter initialized (stub)");
+pub fn init_otlp_exporter(config: OtlpExporterConfig) -> Result<()> {
+    if !config.enabled {
+        info!("OTLP exporter is disabled");
+        return Ok(());
+    }
+
+    info!("Initializing OTLP exporter to {}", config.endpoint);
+
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(
+            opentelemetry_otlp::new_exporter()
+                .tonic()
+                .with_endpoint(&config.endpoint),
+        )
+        .with_trace_config(
+            sdktrace::config().with_resource(Resource::new(vec![KeyValue::new(
+                "service.name",
+                config.service_name,
+            )])),
+        )
+        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+
+    global::set_tracer_provider(tracer.provider().unwrap());
+
+    // NOTE: Application must also set up tracing_subscriber globally using this tracer.
+    // That is usually done in the main entry point.
+
+    info!("OTLP exporter initialized successfully");
     Ok(())
 }
+
