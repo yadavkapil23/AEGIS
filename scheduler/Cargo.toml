@@ -25,6 +25,7 @@ rand.workspace = true
 
 aegis-telemetry = { path = "../telemetry" }
 aegis-proto = { path = "../proto" }
+inference-backends = { path = "../inference-backends" }
 
 [build-dependencies]
 tonic-build.workspace = true
