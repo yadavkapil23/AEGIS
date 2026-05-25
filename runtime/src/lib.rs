@@ -76,6 +76,10 @@ impl AEGISRuntime {
     /// Execute an inference request
     pub async fn execute(&self, request: InferenceRequest) -> Result<Vec<String>> {
         let request_id = request.request_id.clone();
+        
+        // OpenTelemetry Trace Context (simulated active trace for this execution)
+        let trace_id = uuid::Uuid::new_v4().to_string();
+        info!(request_id = %request_id, trace_id = %trace_id, "Starting distributed execution trace");
 
         // Initialize audit trail
         let event = aegis_audit::engine::AuditEvent {
@@ -86,7 +90,8 @@ impl AEGISRuntime {
                 "request_id": request.request_id,
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature,
-                "enable_speculation": request.enable_speculation
+                "enable_speculation": request.enable_speculation,
+                "trace_id": trace_id
             }).to_string(),
             timestamp_ns: chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
         };
@@ -98,21 +103,38 @@ impl AEGISRuntime {
 
         // Allocate KV cache
         let blocks = self.scheduler.allocate(&request_id, 10)?;
-        info!(request_id = %request_id, blocks = blocks.len(), "KV cache allocated");
+        info!(request_id = %request_id, blocks = blocks.len(), "Physical KV cache allocated");
 
         // Initialize speculative branch
         self.speculative.create_branch(&request_id)?;
 
-        // Generate draft tokens
-        let draft_tokens = self.speculative.generate_draft(&request_id, request.max_tokens as usize)?;
-
         let mut output_tokens = Vec::new();
-        for token in draft_tokens {
-            output_tokens.push(token.text.clone());
+        
+        // 1. Generate Draft Tokens
+        let draft_tokens = self.speculative.generate_draft(&request_id, &request.prompt, request.max_tokens as usize)?;
+        
+        // 2. Verify Draft Tokens with Target Model
+        let acceptances = self.speculative.verify(&request_id, &request.prompt, &draft_tokens)?;
+        
+        let mut accepted_count = 0;
+        for (i, &accepted) in acceptances.iter().enumerate() {
+            if accepted {
+                output_tokens.push(draft_tokens[i].text.clone());
+                accepted_count += 1;
+            } else {
+                // 3. Rollback KV Cache upon first rejection
+                info!(request_id = %request_id, token_index = i, "Speculative rejection, initiating rollback");
+                self.speculative.rollback(&request_id, draft_tokens[i].id)?;
+                break;
+            }
         }
+        
+        // 4. Commit accepted tokens to branch history
+        self.speculative.commit(&request_id, accepted_count)?;
 
         // Deallocate cache
         self.scheduler.deallocate(&blocks)?;
+        info!(request_id = %request_id, accepted_tokens = accepted_count, "Execution complete, KV cache deallocated");
 
         Ok(output_tokens)
     }
