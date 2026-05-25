@@ -2,7 +2,7 @@
 // Propagates trace context across nodes via gRPC headers
 
 use std::collections::HashMap;
-use tracing::{debug, info};
+
 use parking_lot::Mutex;
 use std::sync::Arc;
 
