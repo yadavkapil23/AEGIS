@@ -55,7 +55,7 @@ pub struct InferenceLog {
 /// Create database connection pool
 pub async fn create_pool() -> Result<DbPool, sqlx::Error> {
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5432/aegis_gateway".to_string());
+        .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5433/aegis_gateway".to_string());
 
     info!("Connecting to PostgreSQL: {}", database_url);
 
