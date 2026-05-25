@@ -177,6 +177,27 @@ impl Context {
         Ok(())
     }
 
+    /// Remove a sequence from the KV cache
+    pub fn kv_cache_rm(&mut self, seq_id: i32, p0: i32, p1: i32) {
+        unsafe {
+            sys::llama_kv_cache_seq_rm(self.ptr, seq_id, p0, p1);
+        }
+    }
+
+    /// Copy a sequence in the KV cache
+    pub fn kv_cache_cp(&mut self, seq_id_src: i32, seq_id_dst: i32, p0: i32, p1: i32) {
+        unsafe {
+            sys::llama_kv_cache_seq_cp(self.ptr, seq_id_src, seq_id_dst, p0, p1);
+        }
+    }
+
+    /// Keep only the specified sequence in the KV cache, removing all others
+    pub fn kv_cache_keep(&mut self, seq_id: i32) {
+        unsafe {
+            sys::llama_kv_cache_seq_keep(self.ptr, seq_id);
+        }
+    }
+
     /// Get context size
     pub fn n_ctx(&self) -> i32 {
         self.n_ctx
@@ -280,6 +301,24 @@ impl Session {
     /// Get model vocabulary size
     pub fn vocab_size(&self) -> i32 {
         self.model.vocab_size()
+    }
+
+    /// Remove a sequence from the KV cache
+    pub fn kv_cache_rm(&self, seq_id: i32, p0: i32, p1: i32) {
+        let mut ctx = self.context.lock();
+        ctx.kv_cache_rm(seq_id, p0, p1);
+    }
+
+    /// Copy a sequence in the KV cache
+    pub fn kv_cache_cp(&self, seq_id_src: i32, seq_id_dst: i32, p0: i32, p1: i32) {
+        let mut ctx = self.context.lock();
+        ctx.kv_cache_cp(seq_id_src, seq_id_dst, p0, p1);
+    }
+
+    /// Keep only the specified sequence in the KV cache
+    pub fn kv_cache_keep(&self, seq_id: i32) {
+        let mut ctx = self.context.lock();
+        ctx.kv_cache_keep(seq_id);
     }
 }
 
