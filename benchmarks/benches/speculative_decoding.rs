@@ -11,7 +11,7 @@ fn benchmark_speculative_decoding(c: &mut Criterion) {
         coord.create_branch("req-1").unwrap();
 
         b.iter(|| {
-            let _ = coord.generate_draft("req-1", black_box(5));
+            let _ = coord.generate_draft("req-1", "Test prompt", black_box(5));
         })
     });
 
@@ -20,10 +20,10 @@ fn benchmark_speculative_decoding(c: &mut Criterion) {
         let coord = SpeculativeCoordinator::new(16, metrics);
         coord.create_branch("req-1").unwrap();
 
-        coord.generate_draft("req-1", 5).unwrap();
+        let draft = coord.generate_draft("req-1", "Test prompt", 5).unwrap_or_default();
 
         b.iter(|| {
-            let _ = coord.verify("req-1", black_box(&[0, 1, 2, 3, 4]));
+            let _ = coord.verify("req-1", "Test prompt", black_box(&draft));
         })
     });
 
@@ -46,8 +46,8 @@ fn benchmark_speculative_decoding(c: &mut Criterion) {
             for i in 0..100 {
                 let req_id = format!("req-{}", i);
                 coord.create_branch(&req_id).ok();
-                coord.generate_draft(&req_id, 5).ok();
-                coord.verify(&req_id, &[0, 1, 2, 3, 4]).ok();
+                let draft = coord.generate_draft(&req_id, "Test prompt", 5).unwrap_or_default();
+                coord.verify(&req_id, "Test prompt", &draft).ok();
             }
         })
     });
