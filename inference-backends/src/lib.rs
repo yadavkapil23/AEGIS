@@ -18,6 +18,8 @@ pub mod production_manager;
 pub mod router;
 pub mod traits;
 pub mod vllm;
+pub mod llama_cpp_sys;
+pub mod llama_cpp_safe;
 
 pub use config::BackendConfig;
 pub use error::{BackendError, Result};
