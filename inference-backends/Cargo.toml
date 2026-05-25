@@ -38,6 +38,9 @@ dashmap.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
 
+# Native inference
+llama-cpp-2.workspace = true
+
 # Testing
 [dev-dependencies]
 tokio-test = "0.4"
