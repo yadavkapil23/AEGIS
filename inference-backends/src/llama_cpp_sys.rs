@@ -139,6 +139,11 @@ extern "C" {
     pub fn llama_decode(ctx: *mut LlamaContext, batch: *mut LlamaBatch) -> c_int;
     pub fn llama_batch_clear(batch: *mut LlamaBatch);
 
+    // KV Cache management
+    pub fn llama_kv_cache_seq_rm(ctx: *mut LlamaContext, seq_id: i32, p0: i32, p1: i32);
+    pub fn llama_kv_cache_seq_cp(ctx: *mut LlamaContext, seq_id_src: i32, seq_id_dst: i32, p0: i32, p1: i32);
+    pub fn llama_kv_cache_seq_keep(ctx: *mut LlamaContext, seq_id: i32);
+
     // Sampling
     pub fn llama_sampling_init(params: *const LlamaSamplingParams) -> *mut std::ffi::c_void;
     pub fn llama_sampling_free(state: *mut std::ffi::c_void);
