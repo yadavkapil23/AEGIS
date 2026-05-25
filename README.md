@@ -10,7 +10,8 @@ A production-ready, highly-optimized LLM gateway and systems infrastructure proj
 
 AEGIS is not just a model wrapper; it is an **infrastructure-first, high-performance LLM inference engine**. It sits between your applications and your models, providing:
 
-- **Native C++ LLM Integration**: Uses FFI bindings (`llama-cpp-2`) for deep, zero-overhead physical control of the model.
+- **Multi-Backend Orchestration**: Intelligently routes traffic and falls back between Native `llama.cpp`, **vLLM**, **Ollama**, and **HuggingFace Cloud** depending on real-time GPU availability.
+- **Native C++ LLM Integration**: Uses FFI bindings (`llama-cpp-2`) for deep, zero-overhead physical control of the local model.
 - **Speculative Decoding Loops**: Generates tokens rapidly by using a small "draft" model to predict text, which a large "target" model verifies in parallel.
 - **Physical KV-Cache Management**: Intelligently allocates, evicts, and re-uses LLM memory directly at the C++ level.
 - **Cryptographic Audit Engine**: Secures every inference request by chaining them into an immutable Merkle hash tree—making execution logs tamper-proof.

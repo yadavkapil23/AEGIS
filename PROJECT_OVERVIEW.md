@@ -15,7 +15,10 @@ Modern AI applications suffer from three major bottlenecks: Latency, VRAM costs,
 
 ## Tech Stack
 * **Core Language**: Rust (Actix-Web, Tokio)
-* **Native Inference**: C++ (`llama.cpp` via `llama-cpp-2` FFI bindings)
+* **Supported AI Engines**:
+  * **vLLM**: Configured as the primary high-throughput backend.
+  * **Native C++**: `llama.cpp` via `llama-cpp-2` FFI bindings for low-latency physical control.
+  * **Ollama & HuggingFace**: Built-in HTTP fallback routing for local containers and cloud APIs.
 * **Database**: PostgreSQL (sqlx)
 * **Telemetry**: Prometheus, Grafana, OpenTelemetry
 * **Caching**: Redis (For Distributed Rate Limiting)
