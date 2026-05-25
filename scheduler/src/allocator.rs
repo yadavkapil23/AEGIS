@@ -7,6 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{info, warn};
+use inference_backends::llama_cpp_safe::Session;
 
 /// KVBlock: a unit of KV cache memory
 #[derive(Debug, Clone)]
@@ -18,13 +19,16 @@ pub struct KVBlock {
     pub created_at: std::time::Instant,
 }
 
-/// KVCacheAllocator: manages KV cache blocks with LRU eviction
+/// KVCacheAllocator: manages KV cache blocks with LRU eviction and physical backend management
 pub struct KVCacheAllocator {
     total_bytes: usize,
     block_size: usize,
     blocks: Arc<DashMap<usize, Mutex<KVBlock>>>,
     free_list: Mutex<VecDeque<usize>>,
     block_counter: AtomicUsize,
+    
+    // Optional physical backend binding
+    target_session: Option<Arc<Mutex<Session>>>,
 
     // Metrics
     total_allocated: AtomicUsize,
@@ -79,10 +83,16 @@ impl KVCacheAllocator {
             blocks,
             free_list: Mutex::new(free_list),
             block_counter: AtomicUsize::new(num_blocks),
+            target_session: None,
             total_allocated: AtomicUsize::new(0),
             total_evicted: AtomicUsize::new(0),
             fragmentation: Mutex::new(0.0),
         })
+    }
+
+    /// Set the physical llama.cpp session to manage its internal KV state
+    pub fn set_session(&mut self, session: Arc<Mutex<Session>>) {
+        self.target_session = Some(session);
     }
 
     /// Allocate KV blocks
@@ -114,7 +124,7 @@ impl KVCacheAllocator {
         Ok(allocated)
     }
 
-    /// Deallocate KV blocks
+    /// Deallocate KV blocks and physically remove from backend
     pub fn deallocate(&self, block_ids: &[usize]) -> Result<()> {
         let mut free_list = self.free_list.lock();
 
@@ -125,6 +135,12 @@ impl KVCacheAllocator {
                 kb.owner = None;
                 drop(kb);
                 free_list.push_back(block_id);
+                
+                // Perform physical eviction if backend is bound
+                if let Some(session) = &self.target_session {
+                    let s = session.lock();
+                    s.kv_cache_rm(block_id as i32, -1, -1);
+                }
             }
         }
 
