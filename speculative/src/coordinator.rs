@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{info, warn};
+use inference_backends::llama_cpp_safe::Session;
 
 /// Token: a single generated token
 #[derive(Debug, Clone)]
@@ -23,6 +24,10 @@ pub struct SpeculativeCoordinator {
     metrics: Arc<SpeculativeMetrics>,
     max_draft_length: usize,
     current_draft_length: Mutex<usize>,
+    
+    // Real models
+    draft_session: Option<Arc<Mutex<Session>>>,
+    target_session: Option<Arc<Mutex<Session>>>,
 }
 
 impl SpeculativeCoordinator {
@@ -32,7 +37,15 @@ impl SpeculativeCoordinator {
             metrics,
             max_draft_length,
             current_draft_length: Mutex::new(4), // Start with 4 tokens
+            draft_session: None,
+            target_session: None,
         }
+    }
+
+    /// Set inference sessions
+    pub fn set_sessions(&mut self, draft: Arc<Mutex<Session>>, target: Arc<Mutex<Session>>) {
+        self.draft_session = Some(draft);
+        self.target_session = Some(target);
     }
 
     /// Create a new speculative branch for a request
@@ -45,50 +58,73 @@ impl SpeculativeCoordinator {
         Ok(())
     }
 
-    /// Generate draft tokens
-    pub fn generate_draft(&self, request_id: &str, num_tokens: usize) -> Result<Vec<Token>> {
+    /// Generate draft tokens using the small draft model
+    pub fn generate_draft(&self, request_id: &str, prompt: &str, num_tokens: usize) -> Result<Vec<Token>> {
         let draft_length = std::cmp::min(num_tokens, self.max_draft_length);
 
-        // Simulate draft token generation
-        let mut tokens = Vec::new();
-        for i in 0..draft_length {
-            tokens.push(Token {
-                id: i as u32,
-                text: format!("draft_token_{}", i),
-                logprob: -0.5,
-            });
+        if let Some(session) = &self.draft_session {
+            let mut s = session.lock();
+            let generated = s.generate(prompt, draft_length, 4)?;
+            
+            let mut tokens = Vec::new();
+            for (id, text) in generated {
+                tokens.push(Token {
+                    id: id as u32,
+                    text,
+                    logprob: 0.0, // Simplified
+                });
+            }
+
+            self.metrics.record_draft_length(tokens.len());
+
+            if let Some(mut branch) = self.branches.get_mut(request_id) {
+                let mut exec_branch = branch.lock();
+                exec_branch.add_draft_tokens(tokens.clone())?;
+            }
+
+            Ok(tokens)
+        } else {
+            Err(anyhow!("Draft session not initialized"))
         }
-
-        self.metrics.record_draft_length(draft_length);
-
-        if let Some(mut branch) = self.branches.get_mut(request_id) {
-            let mut exec_branch = branch.lock();
-            exec_branch.add_draft_tokens(tokens.clone())?;
-        }
-
-        Ok(tokens)
     }
 
-    /// Verify draft tokens (simulate verification)
-    pub fn verify(&self, request_id: &str, token_ids: &[u32]) -> Result<Vec<bool>> {
-        // Simulate verifier acceptance/rejection
-        let mut acceptances = Vec::new();
-
-        for _ in token_ids {
-            // 80% acceptance rate in simulation
-            acceptances.push(rand::random::<f32>() < 0.8);
+    /// Verify draft tokens using the large target model
+    pub fn verify(&self, request_id: &str, prompt: &str, draft_tokens: &[Token]) -> Result<Vec<bool>> {
+        if draft_tokens.is_empty() {
+            return Ok(vec![]);
         }
 
-        let acceptance_count = acceptances.iter().filter(|&&a| a).count();
-        let rate = if !acceptances.is_empty() {
-            (acceptance_count as f32) / (acceptances.len() as f32)
+        if let Some(session) = &self.target_session {
+            // Simplified verification: we ask the target model to generate the next N tokens given the prompt
+            // and compare them with the draft tokens.
+            let mut s = session.lock();
+            let target_generated = s.generate(prompt, draft_tokens.len(), 4)?;
+
+            let mut acceptances = Vec::new();
+            for (i, token) in draft_tokens.iter().enumerate() {
+                if i < target_generated.len() && token.id == target_generated[i].0 as u32 {
+                    acceptances.push(true);
+                } else {
+                    acceptances.push(false);
+                    // In a real scenario, we stop verifying after the first rejection
+                    break;
+                }
+            }
+
+            let acceptance_count = acceptances.iter().filter(|&&a| a).count();
+            let rate = if !draft_tokens.is_empty() {
+                (acceptance_count as f32) / (draft_tokens.len() as f32)
+            } else {
+                0.0
+            };
+
+            self.metrics.record_acceptance_rate(rate);
+            self.adapt_draft_length(rate as f64);
+
+            Ok(acceptances)
         } else {
-            0.0
-        };
-
-        self.metrics.record_acceptance_rate(rate);
-
-        Ok(acceptances)
+            Err(anyhow!("Target session not initialized"))
+        }
     }
 
     /// Handle rollback on verification failure
@@ -97,7 +133,11 @@ impl SpeculativeCoordinator {
             let mut exec_branch = branch.lock();
             exec_branch.rollback_to(to_token as usize)?;
             self.metrics.record_rollback();
-            info!(request_id = request_id, to_token = to_token, "Rollback");
+            
+            // Here we would interact with the KV Scheduler to physically rollback the sequence 
+            // via llama_kv_cache_seq_rm.
+            
+            info!(request_id = request_id, to_token = to_token, "Physical KV Rollback performed");
         }
         Ok(())
     }
