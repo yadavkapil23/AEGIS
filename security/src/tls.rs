@@ -198,6 +198,7 @@ impl CertificateValidator {
 
 /// TLS connection metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TlsMetrics {
     /// Number of active TLS connections
     pub active_connections: u64,
@@ -215,17 +216,6 @@ pub struct TlsMetrics {
     pub mtls_rejections: u64,
 }
 
-impl Default for TlsMetrics {
-    fn default() -> Self {
-        Self {
-            active_connections: 0,
-            total_connections: 0,
-            handshake_failures: 0,
-            expired_certs: 0,
-            mtls_rejections: 0,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
