@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
-use tracing::warn;
 
 /// Error returned when the queue is at capacity.
 #[derive(Debug)]
@@ -168,7 +167,7 @@ impl RequestQueue {
 
     /// Remove all queued requests (for graceful shutdown).
     pub fn drain(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.inner.order.lock().drain(..).collect();
+        let ids: Vec<String> = self.inner.order.lock().drain(..).collect();
         for id in &ids {
             self.inner.entries.remove(id);
         }
