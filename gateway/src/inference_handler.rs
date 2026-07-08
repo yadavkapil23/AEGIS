@@ -50,16 +50,13 @@ pub async fn infer_handler(
     let start = Instant::now();
 
     // Validate request
-    match validate_request(&req) {
-        Err(e) => {
-            error!("Invalid request: {}", e);
-            metrics.record_inference_error("validation_error");
-            return HttpResponse::BadRequest().json(InferenceError {
-                error: e,
-                error_code: "invalid_request".to_string(),
-            });
-        }
-        Ok(_) => {}
+    if let Err(e) = validate_request(&req) {
+        error!("Invalid request: {}", e);
+        metrics.record_inference_error("validation_error");
+        return HttpResponse::BadRequest().json(InferenceError {
+            error: e,
+            error_code: "invalid_request".to_string(),
+        });
     }
 
     info!(
@@ -248,14 +245,14 @@ fn validate_request(req: &InferenceRequest) -> Result<(), String> {
 
     // Validate temperature if provided
     if let Some(temp) = req.temperature {
-        if temp < 0.0 || temp > 2.0 {
+        if !(0.0..=2.0).contains(&temp) {
             return Err("temperature must be between 0.0 and 2.0".to_string());
         }
     }
 
     // Validate top_p if provided
     if let Some(top_p) = req.top_p {
-        if top_p < 0.0 || top_p > 1.0 {
+        if !(0.0..=1.0).contains(&top_p) {
             return Err("top_p must be between 0.0 and 1.0".to_string());
         }
     }
@@ -339,7 +336,7 @@ pub async fn infer_stream_handler(
 
     let sse_stream = byte_stream.filter_map(move |chunk| {
         let metrics = metrics_clone.clone();
-        let model = model_clone.clone();
+        let _model = model_clone.clone();
         async move {
             match chunk {
                 Ok(bytes) => {
