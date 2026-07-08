@@ -219,6 +219,69 @@ impl Drop for Context {
 unsafe impl Send for Context {}
 unsafe impl Sync for Context {}
 
+/// Sample a token from logits using temperature scaling and nucleus (top_p) sampling.
+///
+/// 1. Scale logits by 1/temperature
+/// 2. Convert to probabilities via softmax
+/// 3. Sort by probability descending
+/// 4. Keep tokens until cumulative probability exceeds top_p
+/// 5. Renormalize and sample
+fn sample_with_temperature_top_p(logits: &[f32], temperature: f32, top_p: f32) -> i32 {
+    use rand::Rng;
+
+    let n = logits.len();
+    if n == 0 {
+        return 0;
+    }
+
+    // Step 1: Temperature scaling
+    let scaled: Vec<f32> = logits.iter().map(|&l| l / temperature).collect();
+
+    // Step 2: Softmax (with max subtraction for numerical stability)
+    let max_val = scaled.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let exp_sum: f32 = scaled.iter().map(|&x| (x - max_val).exp()).sum();
+    let mut probs: Vec<(usize, f32)> = scaled.iter().enumerate()
+        .map(|(i, &x)| (i, (x - max_val).exp() / exp_sum))
+        .collect();
+
+    // Step 3: Sort by probability descending
+    probs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Step 4: Top-p filtering
+    let filtered: Vec<(usize, f32)> = if top_p < 1.0 && top_p > 0.0 {
+        let mut cumsum = 0.0;
+        let mut cutoff = probs.len();
+        for (i, &(_, p)) in probs.iter().enumerate() {
+            cumsum += p;
+            if cumsum >= top_p {
+                cutoff = i + 1;
+                break;
+            }
+        }
+        probs[..cutoff].to_vec()
+    } else {
+        probs
+    };
+
+    // Step 5: Renormalize and sample
+    let total: f32 = filtered.iter().map(|(_, p)| p).sum();
+    if total <= 0.0 {
+        return filtered.first().map(|(i, _)| *i as i32).unwrap_or(0);
+    }
+
+    let mut rng = rand::thread_rng();
+    let r: f32 = rng.gen::<f32>() * total;
+    let mut cumsum = 0.0;
+    for &(idx, p) in &filtered {
+        cumsum += p;
+        if r <= cumsum {
+            return idx as i32;
+        }
+    }
+
+    filtered.last().map(|(i, _)| *i as i32).unwrap_or(0)
+}
+
 /// Complete llama.cpp inference session
 pub struct Session {
     model: Arc<Model>,
@@ -287,22 +350,27 @@ impl Session {
                     return Err(anyhow!("Failed to get logits"));
                 }
 
-                // Greedy sampling: find token with highest logit
+                // Sample next token with temperature and top_p
                 let vocab_size = self.model.vocab_size() as usize;
                 let logits = unsafe {
                     std::slice::from_raw_parts(logits_ptr, vocab_size)
                 };
 
-                let mut best_token = 0;
-                let mut best_logit = f32::NEG_INFINITY;
-                for (i, &logit) in logits.iter().enumerate() {
-                    if logit > best_logit {
-                        best_logit = logit;
-                        best_token = i;
-                    }
-                }
-
-                let next_token = best_token as i32;
+                let next_token = if self.temperature <= 0.0 || self.temperature.is_nan() {
+                    // Greedy: argmax
+                    logits.iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|(i, _)| i as i32)
+                        .unwrap_or(0)
+                } else {
+                    // Temperature-scaled sampling with top_p
+                    sample_with_temperature_top_p(
+                        logits,
+                        self.temperature,
+                        self.top_p,
+                    )
+                };
                 let text = self.model.token_to_piece(next_token)?;
 
                 generated.push((next_token, text.clone()));
