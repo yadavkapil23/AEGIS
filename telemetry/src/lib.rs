@@ -2,6 +2,9 @@ pub mod metrics;
 pub mod distributed_tracing;
 pub mod otlp_export;
 
+pub use distributed_tracing::{DistributedTraceContext, SpanRecorder, TracingMetrics};
+pub use otlp_export::{OtlpExporterConfig, init_otlp_exporter};
+
 use anyhow::Result;
 use tracing_subscriber::fmt;
 use tracing_subscriber::EnvFilter;
