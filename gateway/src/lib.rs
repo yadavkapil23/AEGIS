@@ -10,6 +10,7 @@ pub mod config;
 pub mod credentials;
 pub mod database;
 pub mod db_migrations;
+pub mod handlers;
 pub mod inference_handler;
 pub mod jwt_auth;
 pub mod llm_backend;
