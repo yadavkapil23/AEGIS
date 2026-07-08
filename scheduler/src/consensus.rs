@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use anyhow::{anyhow, Result};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Node ID type
 pub type NodeId = String;
