@@ -3,10 +3,10 @@
 
 use crate::replicated_log::LogEntry;
 use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, BufReader, BufWriter};
+use std::io::{Write, BufReader, BufWriter};
 use std::path::PathBuf;
 use parking_lot::Mutex;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tracing::{debug, info, warn};
 use serde_json;
 
