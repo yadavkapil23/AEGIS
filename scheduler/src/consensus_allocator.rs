@@ -267,7 +267,7 @@ impl ConsensusAllocator {
     }
 
     /// Apply command through consensus
-    async fn apply_command(&self, command: AllocationCommand) -> Result<CommandOutput> {
+    pub async fn apply_command(&self, command: AllocationCommand) -> Result<CommandOutput> {
         // Check if we're leader
         let is_leader = self.consensus.state() == crate::consensus::ConsensusState::Leader;
 
