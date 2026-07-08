@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
 use std::time::Instant;
 use parking_lot::Mutex;
 use tracing::info;
