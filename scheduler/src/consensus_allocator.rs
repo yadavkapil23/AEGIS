@@ -2,8 +2,8 @@
 // Integrates KVCacheAllocator with Raft consensus for multi-node consistency
 // All allocation/deallocation operations go through the consensus leader
 
-use crate::allocator::{KVBlock, KVCacheAllocator, CacheStats};
-use crate::consensus::{QuorumConsensus, ConsensusState};
+use crate::allocator::{KVCacheAllocator, CacheStats};
+use crate::consensus::QuorumConsensus;
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use parking_lot::Mutex;
@@ -94,6 +94,12 @@ pub struct AllocationState {
     pub applied_commands: Arc<AtomicU64>,
     /// Last applied term
     pub last_applied_term: Arc<AtomicU64>,
+}
+
+impl Default for AllocationState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AllocationState {
