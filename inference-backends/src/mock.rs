@@ -174,7 +174,7 @@ impl InferenceBackend for MockBackend {
             request_id: request.request_id.clone(),
             text,
             tokens_generated,
-            backend_used: format!("mock (test only)"),
+            backend_used: "mock (test only)".to_string(),
             processing_time_ms: latency_ms,
             token_probabilities: None,
             finish_reason: "length".to_string(),
