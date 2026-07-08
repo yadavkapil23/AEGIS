@@ -170,6 +170,12 @@ pub async fn disable_api_key(db: &DbPool, key: &str) -> Result<bool, sqlx::Error
     }
 }
 
+/// List all API keys from cache (masked in responses).
+pub fn list_api_keys(db: &DbPool) -> Vec<ApiKeyInfo> {
+    let cache = db.api_key_cache.read();
+    cache.values().cloned().collect()
+}
+
 /// Log inference request to database (async, non-blocking)
 pub async fn log_inference(
     db: &DbPool,
