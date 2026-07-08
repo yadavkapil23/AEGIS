@@ -8,8 +8,6 @@ pub use engine::AuditEngine;
 pub use trail::ExecutionTrail;
 pub use metrics::AuditMetrics;
 
-use anyhow::Result;
-use std::sync::Arc;
 
 /// AuditConfig: configuration for audit trail
 #[derive(Debug, Clone)]
