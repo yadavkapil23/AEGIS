@@ -2,8 +2,6 @@
 
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Instant;
 
 /// SchedulerMetrics: tracks KV cache performance
 pub struct SchedulerMetrics {
