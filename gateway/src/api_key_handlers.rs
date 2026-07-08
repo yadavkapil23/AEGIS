@@ -1,9 +1,9 @@
 use actix_web::{web, HttpResponse, get, post, delete};
 use serde::{Deserialize, Serialize};
 use tracing::{info, error};
-use sha2::{Sha256, Digest};
+use sha2::Digest;
 
-use crate::database::{self, DbPool, ApiKeyInfo};
+use crate::database::{self, ApiKeyInfo};
 use crate::middleware::GatewayState;
 
 // ── Request / Response types ──────────────────────────────────
