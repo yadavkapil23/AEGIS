@@ -243,6 +243,11 @@ impl LLMBackend {
         }
     }
 
+    /// Get the vLLM endpoint URL (used by streaming handler).
+    pub fn vllm_endpoint(&self) -> &str {
+        &self.vllm_endpoint
+    }
+
     /// Retry logic with exponential backoff
     async fn retry_request<F, Fut, T>(
         &self,
