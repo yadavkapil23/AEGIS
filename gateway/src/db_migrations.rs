@@ -1,6 +1,5 @@
-use std::path::Path;
 use tracing::{info, warn, error};
-use sha2::{Sha256, Digest};
+use sha2::Digest;
 use sqlx::postgres::PgPool;
 
 /// Migration metadata
@@ -46,7 +45,7 @@ impl MigrationManager {
         name: &str,
         description: &str,
         sql: &str,
-        rollback_sql: Option<&str>,
+        _rollback_sql: Option<&str>,
     ) -> Result<String, String> {
         if name.is_empty() {
             return Err("Migration name cannot be empty".into());
@@ -233,15 +232,14 @@ impl MigrationManager {
         let upper = migration.sql.to_uppercase();
 
         for keyword in &dangerous {
-            if upper.contains(keyword) {
-                if migration.rollback_sql.is_none() {
+            if upper.contains(keyword)
+                && migration.rollback_sql.is_none() {
                     warn!("Dangerous operation '{}' without rollback SQL", keyword);
                     return Err(format!(
                         "Dangerous operation '{}' requires rollback_sql",
                         keyword
                     ));
                 }
-            }
         }
         Ok(())
     }
