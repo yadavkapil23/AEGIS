@@ -1,3 +1,7 @@
+pub mod metrics;
+pub mod distributed_tracing;
+pub mod otlp_export;
+
 use anyhow::Result;
 use tracing_subscriber::fmt;
 use tracing_subscriber::EnvFilter;
