@@ -144,7 +144,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(RequestIdMiddleware)
             .wrap(actix_mw::Logger::default())
             .wrap(SecurityHeadersMiddleware)
-            .wrap(RateLimitMiddleware::new(config.rate_limit_rps as u32 * 60 / 1000))
+            .wrap(RateLimitMiddleware::new(config.rate_limit_rps * 60 / 1000))
             .wrap(JwtAuthMiddleware::new(api_key_validator.get_ref().clone()))
             .wrap(actix_mw::NormalizePath::trim())
             // Inference endpoints
