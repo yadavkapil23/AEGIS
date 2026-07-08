@@ -1,6 +1,5 @@
 // Eviction policy: LRU, LFU strategies
 
-use std::collections::HashMap;
 
 /// EvictionPolicy: strategy for cache eviction
 #[derive(Debug, Clone)]
