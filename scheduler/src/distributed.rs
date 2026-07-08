@@ -335,7 +335,7 @@ impl DistributedKVCache {
         // Hash all current block ownership
         let mut entries: Vec<_> = self.node_map
             .iter()
-            .map(|ref_multi| (ref_multi.key().clone(), ref_multi.value().clone()))
+            .map(|ref_multi| (*ref_multi.key(), ref_multi.value().clone()))
             .collect();
 
         entries.sort_by_key(|e| e.0);
