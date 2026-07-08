@@ -13,7 +13,6 @@ rand.workspace = true
 aegis-runtime = { path = "../runtime" }
 aegis-proto = { path = "../proto" }
 aegis-scheduler = { path = "../scheduler" }
-aegis-speculative = { path = "../speculative" }
 aegis-audit = { path = "../audit" }
 inference-backends = { path = "../inference-backends" }
 
@@ -23,10 +22,6 @@ harness = false
 
 [[bench]]
 name = "kv_scheduler"
-harness = false
-
-[[bench]]
-name = "speculative_decoding"
 harness = false
 
 [[bench]]
