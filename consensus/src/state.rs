@@ -1,6 +1,5 @@
 // Execution state: distributed state tracking
 
-use parking_lot::RwLock;
 use std::collections::HashMap;
 
 /// ExecutionState: distributed state snapshot
