@@ -88,7 +88,7 @@ impl KVScheduler {
     }
 
     /// Allocate KV cache blocks for a request
-    pub fn allocate(&self, request_id: &str, num_blocks: usize) -> Result<Vec<usize>> {
+    pub fn allocate(&self, _request_id: &str, num_blocks: usize) -> Result<Vec<usize>> {
         let block_ids = self.allocator.allocate(num_blocks)?;
         self.metrics.record_allocation(num_blocks);
         Ok(block_ids)
