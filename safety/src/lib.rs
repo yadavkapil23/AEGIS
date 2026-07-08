@@ -8,8 +8,6 @@ pub use monitor::SafetyMonitor;
 pub use policy::{Policy, PolicyAction};
 pub use metrics::SafetyMetrics;
 
-use anyhow::Result;
-use std::sync::Arc;
 
 /// SafetyConfig: configuration for safety enforcement
 #[derive(Debug, Clone)]
