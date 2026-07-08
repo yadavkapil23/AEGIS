@@ -148,7 +148,7 @@ impl NodeSelector {
 
     /// Select node with round-robin on ties
     pub fn select_node_round_robin(&self, required_blocks: usize) -> Result<String> {
-        let mut metrics = self.node_metrics.lock();
+        let metrics = self.node_metrics.lock();
 
         if metrics.is_empty() {
             return Err(anyhow!("No nodes registered"));
