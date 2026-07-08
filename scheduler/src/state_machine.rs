@@ -4,8 +4,8 @@
 use crate::replicated_log::{LogOperation, LogEntry};
 use std::sync::Arc;
 use parking_lot::Mutex;
-use anyhow::{anyhow, Result};
-use tracing::{debug, info};
+use anyhow::Result;
+use tracing::debug;
 
 /// State machine operation result
 #[derive(Clone, Debug, PartialEq)]
