@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 use tokio::fs;
 use tokio::process::Command;
@@ -219,7 +219,7 @@ impl BackupManager {
 
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "gz" || e == "sql" || e == "json") {
+            if path.extension().is_some_and(|e| e == "gz" || e == "sql" || e == "json") {
                 let metadata = match fs::metadata(&path).await {
                     Ok(m) => m,
                     Err(_) => continue,
