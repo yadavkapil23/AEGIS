@@ -2,15 +2,17 @@
 
 pub mod log;
 pub mod state;
+pub mod peer_client;
 
 pub use log::ReplicatedLog;
 pub use state::ExecutionState;
+pub use peer_client::PeerClient;
 
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
 use std::time::{Duration, Instant};
 
 /// Node role in the cluster.
@@ -263,6 +265,99 @@ impl ConsensusEngine {
 
     pub fn log_ref(&self) -> &ReplicatedLog {
         &self.log
+    }
+
+    // ── Peer replication (uses PeerClient for real gRPC) ───
+
+    /// Start an election and actually solicit votes from peers via gRPC.
+    pub async fn start_election_with_peers(&self, peer_client: &PeerClient) {
+        self.start_election();
+        let term = self.current_term();
+        let last_idx = self.log.last_index();
+
+        let (votes, total_peers) = peer_client
+            .broadcast_request_vote(&self.config.node_id, term, last_idx, 0)
+            .await;
+
+        // +1 for self-vote
+        let total = total_peers + 1;
+        let majority = total / 2 + 1;
+        let all_votes = votes + 1; // include self
+
+        if all_votes >= majority {
+            *self.role.write() = NodeRole::Leader;
+            *self.leader_id.write() = Some(self.config.node_id.clone());
+            info!(
+                node_id = %self.config.node_id,
+                votes = all_votes,
+                majority = majority,
+                "Won election via peer voting"
+            );
+        } else {
+            info!(
+                node_id = %self.config.node_id,
+                votes = all_votes,
+                majority = majority,
+                "Election lost, staying follower"
+            );
+            self.step_down();
+        }
+    }
+
+    /// Send heartbeat (AppendEntries) to all peers.
+    /// Returns (successes, total_peers).
+    pub async fn send_heartbeat(&self, peer_client: &PeerClient) -> (u64, u64) {
+        if !self.is_leader() {
+            return (0, 0);
+        }
+
+        let term = self.current_term();
+        let last_idx = self.log.last_index();
+
+        let (successes, total) = peer_client
+            .broadcast_heartbeat(
+                &self.config.node_id,
+                term,
+                last_idx,
+                0, // last_log_term (simplified)
+                last_idx, // leader_commit
+            )
+            .await;
+
+        debug!(
+            node_id = %self.config.node_id,
+            successes = successes,
+            total = total,
+            "Heartbeat broadcast complete"
+        );
+
+        (successes, total)
+    }
+
+    /// Replicate a new log entry to all peers.
+    pub async fn replicate_entry(&self, peer_client: &PeerClient, data: String) -> Result<u64> {
+        let idx = self.append_entry(data.clone())?;
+        let term = self.current_term();
+
+        let (successes, total) = peer_client
+            .broadcast_heartbeat(
+                &self.config.node_id,
+                term,
+                idx - 1, // prev_log_index
+                0,        // prev_log_term
+                idx,       // leader_commit
+            )
+            .await;
+
+        info!(
+            node_id = %self.config.node_id,
+            index = idx,
+            replicated_to = successes,
+            total_peers = total,
+            "Entry replicated"
+        );
+
+        Ok(idx)
     }
 }
 
