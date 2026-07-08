@@ -3,10 +3,10 @@
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use parking_lot::Mutex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 use inference_backends::llama_cpp_safe::Session;
 
 /// KVBlock: a unit of KV cache memory
@@ -111,7 +111,7 @@ impl KVCacheAllocator {
 
         for _ in 0..num_blocks {
             if let Some(block_id) = free_list.pop_front() {
-                if let Some(mut block) = self.blocks.get_mut(&block_id) {
+                if let Some(block) = self.blocks.get_mut(&block_id) {
                     block.lock().allocated = true;
                     allocated.push(block_id);
                 }
@@ -129,7 +129,7 @@ impl KVCacheAllocator {
         let mut free_list = self.free_list.lock();
 
         for &block_id in block_ids {
-            if let Some(mut block) = self.blocks.get_mut(&block_id) {
+            if let Some(block) = self.blocks.get_mut(&block_id) {
                 let mut kb = block.lock();
                 kb.allocated = false;
                 kb.owner = None;
@@ -192,7 +192,7 @@ impl KVCacheAllocator {
 
     /// Mark block as owned by a request
     pub fn mark_owner(&self, block_id: usize, request_id: String) -> Result<()> {
-        if let Some(mut block) = self.blocks.get_mut(&block_id) {
+        if let Some(block) = self.blocks.get_mut(&block_id) {
             let mut kb = block.lock();
             kb.owner = Some(request_id);
             Ok(())
