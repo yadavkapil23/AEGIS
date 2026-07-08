@@ -1,14 +1,14 @@
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{info, warn, error};
+use tracing::{info, error};
 
 use crate::backend_manager::BackendManager;
 use crate::cache::RequestCache;
 use crate::database::{self, DbPool};
-use crate::llm_backend::{LLMBackend, InferenceResult};
+use crate::llm_backend::LLMBackend;
 use crate::metrics::PrometheusMetrics;
 use crate::request_queue::{RequestQueue, QueuePermit};
-use crate::request_validator::{validate_request, InferenceRequest as ValidationInput, ValidatedRequest};
+use crate::request_validator::{validate_request, InferenceRequest as ValidationInput};
 
 // ── Public request / response types ───────────────────────────
 
