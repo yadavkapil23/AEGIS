@@ -2,11 +2,10 @@
 
 use crate::metrics::AuditMetrics;
 use crate::trail::ExecutionTrail;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use blake3;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use tracing::info;
 
 /// AuditEvent: a single event to be recorded
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
