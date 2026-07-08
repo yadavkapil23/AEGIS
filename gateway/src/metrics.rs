@@ -1,6 +1,3 @@
-/// Gateway metrics with Prometheus integration
-
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use prometheus::{
