@@ -2,7 +2,6 @@
 
 use aegis_audit::{AuditEngine, AuditMetrics};
 use aegis_consensus::{ConsensusEngine, ConsensusConfig};
-use aegis_gateway::GatewayConfig;
 use aegis_safety::{SafetyMonitor, SafetyMetrics};
 use aegis_scheduler::{KVScheduler, SchedulerConfig};
 use anyhow::Result;
@@ -19,17 +18,11 @@ pub struct AEGISRuntime {
 
 /// RuntimeConfig: unified configuration
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct RuntimeConfig {
     pub scheduler: SchedulerConfig,
 }
 
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            scheduler: SchedulerConfig::default(),
-        }
-    }
-}
 
 impl AEGISRuntime {
     /// Initialize AEGIS runtime
