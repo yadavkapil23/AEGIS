@@ -6,9 +6,8 @@ use crate::state_machine_replication::StateMachineReplication;
 use crate::consensus::Vote;
 use crate::replicated_log::LogEntry;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use anyhow::{anyhow, Result};
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 /// RPC request types
 #[derive(Clone, Debug)]
@@ -171,18 +170,17 @@ impl StateMachineGrpcService {
         }
 
         // If request term is newer, update term and become follower
-        if req.term > current_term {
-            if self.coordinator.is_leader() {
+        if req.term > current_term
+            && self.coordinator.is_leader() {
                 self.coordinator.consensus().become_follower().ok();
             }
-        }
 
         // Update heartbeat
         self.coordinator.consensus().heartbeat_received();
 
         // Check log consistency (prev_log_lsn)
-        if req.prev_log_lsn > 0 {
-            if self.coordinator.log().get(req.prev_log_lsn).is_none() {
+        if req.prev_log_lsn > 0
+            && self.coordinator.log().get(req.prev_log_lsn).is_none() {
                 // Log mismatch - ask leader to send earlier entries
                 return Ok(AppendEntriesResponse {
                     follower_id: my_id,
@@ -191,7 +189,6 @@ impl StateMachineGrpcService {
                     match_lsn: 0,
                 });
             }
-        }
 
         // Append entries
         let mut last_lsn = req.prev_log_lsn;
