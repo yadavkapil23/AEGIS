@@ -1,8 +1,7 @@
 // Rate limiter: token bucket implementation
 
 use parking_lot::Mutex;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// RateLimiter: token bucket rate limiter
 pub struct RateLimiter {
