@@ -199,7 +199,7 @@ impl BackendRouter {
                 let mut backends = Vec::new();
 
                 // Prefer vLLM for low-latency requirements
-                if request.timeout_ms.map_or(false, |t| t < 5000) {
+                if request.timeout_ms.is_some_and(|t| t < 5000) {
                     if health.vllm_healthy && self.vllm_backend.is_some() {
                         backends.push("vllm".to_string());
                     }
