@@ -1,145 +1,252 @@
-// gRPC client for Allocation Service
-// Handles communication with scheduler nodes
-
 use std::sync::Arc;
 use tonic::transport::Channel;
 use anyhow::Result;
 use tracing::{debug, info, warn, error};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
-// Proto-generated code (would be imported from tonic)
-// For now, we define the interface
+// Import generated proto code
+pub mod proto {
+    tonic::include_proto!("scheduler.allocation");
+}
 
-/// Allocation client for communicating with scheduler
+use proto::{
+    allocation_service_client::AllocationServiceClient,
+    AllocateRequest, DeallocateRequest, StatsRequest, HealthRequest, MigrateRequest,
+};
+
+/// Per-node circuit breaker state.
+struct NodeHealth {
+    healthy: bool,
+    consecutive_failures: u32,
+}
+
+/// Allocation client for communicating with the scheduler cluster via gRPC.
 pub struct AllocationClient {
     nodes: Vec<String>,
     current_node: Arc<AtomicUsize>,
-    channels: Arc<Vec<Channel>>,
+    clients: Vec<AllocationServiceClient<Channel>>,
+    health: Vec<parking_lot::Mutex<NodeHealth>>,
 }
 
 impl AllocationClient {
-    /// Create new allocation client
     pub async fn new(nodes: Vec<String>) -> Result<Self> {
-        debug!("Initializing allocation client with nodes: {:?}", nodes);
-
         if nodes.is_empty() {
             return Err(anyhow::anyhow!("No scheduler nodes configured"));
         }
 
-        // Create channels to each node
-        let mut channels = Vec::new();
+        let mut clients = Vec::new();
+        let mut health = Vec::new();
+
         for node in &nodes {
             match Channel::from_shared(node.clone())
+                .map(|ch| ch.connect_timeout(Duration::from_secs(5)))
                 .and_then(|ch| Ok(ch.connect_lazy()))
             {
-                Ok(ch) => {
-                    channels.push(ch);
-                    info!("Connected to scheduler node: {}", node);
+                Ok(channel) => {
+                    let client = AllocationServiceClient::new(channel);
+                    clients.push(client);
+                    health.push(parking_lot::Mutex::new(NodeHealth {
+                        healthy: true,
+                        consecutive_failures: 0,
+                    }));
+                    info!("Prepared gRPC channel to scheduler node: {}", node);
                 }
                 Err(e) => {
-                    warn!("Failed to connect to node {}: {}", node, e);
+                    warn!("Failed to create channel for {}: {}", node, e);
                 }
             }
         }
 
-        if channels.is_empty() {
+        if clients.is_empty() {
             return Err(anyhow::anyhow!("Failed to connect to any scheduler node"));
         }
 
         Ok(Self {
             nodes,
             current_node: Arc::new(AtomicUsize::new(0)),
-            channels: Arc::new(channels),
+            clients,
+            health,
         })
     }
 
-    /// Get next node (round-robin load balancing)
-    fn get_next_node(&self) -> usize {
-        let current = self.current_node.load(Ordering::SeqCst);
-        let next = (current + 1) % self.channels.len();
+    fn next_node(&self) -> usize {
+        let cur = self.current_node.load(Ordering::SeqCst);
+        let next = (cur + 1) % self.clients.len();
         self.current_node.store(next, Ordering::SeqCst);
-        next
+        cur
     }
 
-    /// Allocate blocks
+    fn find_healthy_node(&self) -> Option<usize> {
+        let start = self.current_node.load(Ordering::SeqCst);
+        for offset in 0..self.clients.len() {
+            let idx = (start + offset) % self.clients.len();
+            if self.health[idx].lock().healthy {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    fn mark_failure(&self, idx: usize) {
+        let mut h = self.health[idx].lock();
+        h.consecutive_failures += 1;
+        if h.consecutive_failures >= 3 {
+            h.healthy = false;
+            warn!(node = %self.nodes[idx], "Scheduler node marked unhealthy");
+        }
+    }
+
+    fn mark_success(&self, idx: usize) {
+        let mut h = self.health[idx].lock();
+        h.consecutive_failures = 0;
+        h.healthy = true;
+    }
+
+    // ── Public API ──────────────────────────────────────────
+
     pub async fn allocate_blocks(
         &self,
         request_id: String,
         num_blocks: u32,
         owner: Option<String>,
     ) -> Result<(Vec<u64>, u32, String)> {
-        debug!(
-            request_id = request_id,
-            num_blocks = num_blocks,
-            "Allocating blocks via gRPC client"
-        );
+        let idx = self.find_healthy_node()
+            .ok_or_else(|| anyhow::anyhow!("No healthy scheduler nodes"))?;
 
-        let node_idx = self.get_next_node();
-        let node_addr = self.nodes[node_idx].clone();
+        let req = AllocateRequest {
+            request_id,
+            num_blocks,
+            owner: owner.unwrap_or_default(),
+            priority: 5,
+        };
 
-        // In production, this would make actual gRPC calls
-        // For now, return a simulated response
-        info!(
-            request_id = request_id,
-            node = node_addr,
-            "Allocation request sent"
-        );
-
-        // Simulate allocation
-        let block_ids: Vec<u64> = (1..=num_blocks as u64).collect();
-        Ok((block_ids, 10, node_addr))
+        let start = std::time::Instant::now();
+        match self.clients[idx].clone().allocate_blocks(req).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                self.mark_success(idx);
+                if r.success {
+                    let latency_ms = start.elapsed().as_millis() as u32;
+                    debug!(
+                        node = %self.nodes[idx],
+                        blocks = r.block_ids.len(),
+                        latency_ms = latency_ms,
+                        "Blocks allocated"
+                    );
+                    Ok((r.block_ids, latency_ms, self.nodes[idx].clone()))
+                } else {
+                    Err(anyhow::anyhow!("Allocation rejected: {}", r.error))
+                }
+            }
+            Err(e) => {
+                self.mark_failure(idx);
+                error!(node = %self.nodes[idx], error = %e, "gRPC allocate failed");
+                Err(anyhow::anyhow!("gRPC error: {}", e))
+            }
+        }
     }
 
-    /// Deallocate blocks
     pub async fn deallocate_blocks(
         &self,
         request_id: String,
         block_ids: Vec<u64>,
     ) -> Result<(u32, u32, String)> {
-        debug!(
-            request_id = request_id,
-            num_blocks = block_ids.len(),
-            "Deallocating blocks via gRPC client"
-        );
+        let idx = self.find_healthy_node()
+            .ok_or_else(|| anyhow::anyhow!("No healthy scheduler nodes"))?;
 
-        let node_idx = self.get_next_node();
-        let node_addr = self.nodes[node_idx].clone();
+        let req = DeallocateRequest { request_id, block_ids };
 
-        info!(
-            request_id = request_id,
-            node = node_addr,
-            "Deallocation request sent"
-        );
-
-        // Simulate deallocation
-        Ok((block_ids.len() as u32, 10, node_addr))
+        let start = std::time::Instant::now();
+        match self.clients[idx].clone().deallocate_blocks(req).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                self.mark_success(idx);
+                let latency_ms = start.elapsed().as_millis() as u32;
+                if r.success {
+                    Ok((r.count, latency_ms, self.nodes[idx].clone()))
+                } else {
+                    Err(anyhow::anyhow!("Deallocation rejected: {}", r.error))
+                }
+            }
+            Err(e) => {
+                self.mark_failure(idx);
+                error!(node = %self.nodes[idx], error = %e, "gRPC deallocate failed");
+                Err(anyhow::anyhow!("gRPC error: {}", e))
+            }
+        }
     }
 
-    /// Get cache statistics
     pub async fn get_stats(&self) -> Result<(u64, u64, u32)> {
-        let node_idx = self.current_node.load(Ordering::SeqCst);
-        let node_addr = self.nodes.get(node_idx).cloned().unwrap_or_default();
+        let idx = self.find_healthy_node()
+            .ok_or_else(|| anyhow::anyhow!("No healthy scheduler nodes"))?;
 
-        debug!("Getting stats from node: {}", node_addr);
-
-        // Simulate stats
-        Ok((1000, 750, 75))
+        match self.clients[idx].clone().get_stats(StatsRequest {}).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                self.mark_success(idx);
+                Ok((r.total_blocks, r.allocated_blocks, r.free_blocks as u32))
+            }
+            Err(e) => {
+                self.mark_failure(idx);
+                Err(anyhow::anyhow!("gRPC error: {}", e))
+            }
+        }
     }
 
-    /// Get cluster health
     pub async fn get_cluster_health(&self) -> Result<(bool, u32, u32, String)> {
-        debug!("Getting cluster health");
+        let idx = self.find_healthy_node()
+            .ok_or_else(|| anyhow::anyhow!("No healthy scheduler nodes"))?;
 
-        // Simulate health check
-        Ok((true, 3, 3, "node-1".to_string()))
+        match self.clients[idx].clone().get_cluster_health(HealthRequest {}).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                self.mark_success(idx);
+                Ok((r.healthy, r.total_nodes, r.healthy_nodes, r.leader_id))
+            }
+            Err(e) => {
+                self.mark_failure(idx);
+                Err(anyhow::anyhow!("gRPC error: {}", e))
+            }
+        }
     }
 
-    /// Number of configured nodes
+    pub async fn migrate_block(
+        &self,
+        block_id: u64,
+        from_node: &str,
+        to_node: &str,
+    ) -> Result<()> {
+        let idx = self.find_healthy_node()
+            .ok_or_else(|| anyhow::anyhow!("No healthy scheduler nodes"))?;
+
+        let req = MigrateRequest {
+            block_id,
+            from_node: from_node.to_string(),
+            to_node: to_node.to_string(),
+        };
+
+        match self.clients[idx].clone().migrate_block(req).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                self.mark_success(idx);
+                if r.success {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("Migration rejected: {}", r.error))
+                }
+            }
+            Err(e) => {
+                self.mark_failure(idx);
+                Err(anyhow::anyhow!("gRPC error: {}", e))
+            }
+        }
+    }
+
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
 
-    /// Get connected nodes
     pub fn get_nodes(&self) -> &[String] {
         &self.nodes
     }
@@ -150,29 +257,14 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_allocation_client_creation() {
-        let nodes = vec!["http://localhost:50052".to_string()];
-        let client = AllocationClient::new(nodes).await;
-        assert!(client.is_ok());
+    async fn test_creation() {
+        let result = AllocationClient::new(vec!["http://localhost:50052".into()]).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn test_round_robin_load_balancing() {
-        let nodes = vec![
-            "http://node1:50052".to_string(),
-            "http://node2:50052".to_string(),
-            "http://node3:50052".to_string(),
-        ];
-        let client = AllocationClient::new(nodes).await.unwrap();
-
-        let node1 = client.get_next_node();
-        let node2 = client.get_next_node();
-        let node3 = client.get_next_node();
-        let node1_again = client.get_next_node();
-
-        assert_eq!(node1, 0);
-        assert_eq!(node2, 1);
-        assert_eq!(node3, 2);
-        assert_eq!(node1_again, 0);
+    async fn test_empty_nodes_fails() {
+        let result = AllocationClient::new(vec![]).await;
+        assert!(result.is_err());
     }
 }
