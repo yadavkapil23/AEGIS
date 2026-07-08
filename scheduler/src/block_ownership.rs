@@ -38,7 +38,7 @@ impl BlockOwnership {
         // Add to node→blocks mapping
         self.node_to_blocks
             .entry(node_id.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(block_id);
 
         // Record timestamp
@@ -106,7 +106,7 @@ impl BlockOwnership {
 
             self.node_to_blocks
                 .entry(to_node.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(block_id);
         }
 
@@ -125,7 +125,7 @@ impl BlockOwnership {
     pub fn all_blocks(&self) -> Vec<usize> {
         self.block_to_node
             .iter()
-            .map(|entry| entry.key().clone())
+            .map(|entry| *entry.key())
             .collect()
     }
 
