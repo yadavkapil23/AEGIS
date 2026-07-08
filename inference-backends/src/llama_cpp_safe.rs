@@ -273,25 +273,45 @@ impl Session {
         debug!("Prompt tokenized to {} tokens", tokens.len());
 
         let mut generated = Vec::new();
+        let eos_token = unsafe { sys::llama_token_eos(self.model.as_ptr()) };
 
         // Run inference
         for _ in 0..max_tokens {
             {
                 let mut ctx = self.context.lock();
                 ctx.eval(&tokens, n_threads)?;
-            }
 
-            // Sample next token (simplified: just use top token for now)
-            // In real implementation, use llama_sampling_sample() with temperature/top_p
-            let next_token = tokens[tokens.len() - 1] + 1; // Dummy sampling
-            let text = self.model.token_to_piece(next_token)?;
+                // Get logits from context
+                let logits_ptr = unsafe { sys::llama_get_logits(ctx.as_ptr()) };
+                if logits_ptr.is_null() {
+                    return Err(anyhow!("Failed to get logits"));
+                }
 
-            generated.push((next_token, text.clone()));
-            tokens.push(next_token);
+                // Greedy sampling: find token with highest logit
+                let vocab_size = self.model.vocab_size() as usize;
+                let logits = unsafe {
+                    std::slice::from_raw_parts(logits_ptr, vocab_size)
+                };
 
-            // Stop if we hit EOT
-            if next_token == 2 {
-                break;
+                let mut best_token = 0;
+                let mut best_logit = f32::NEG_INFINITY;
+                for (i, &logit) in logits.iter().enumerate() {
+                    if logit > best_logit {
+                        best_logit = logit;
+                        best_token = i;
+                    }
+                }
+
+                let next_token = best_token as i32;
+                let text = self.model.token_to_piece(next_token)?;
+
+                generated.push((next_token, text.clone()));
+                tokens.push(next_token);
+
+                // Stop if we hit EOS
+                if next_token == eos_token {
+                    break;
+                }
             }
         }
 
