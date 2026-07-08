@@ -8,7 +8,7 @@ use actix_web::{
 use futures_util::future::{ok, LocalBoxFuture, Ready};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
-use tracing::{error, warn};
+use tracing::warn;
 use base64::Engine;
 
 /// JWT Claims structure
