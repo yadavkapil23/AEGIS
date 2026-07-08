@@ -3,20 +3,17 @@ use serde::{Deserialize, Serialize};
 
 /// Backend preference for routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum BackendPreference {
     /// Always use Hugging Face API
     HuggingFace,
     /// Always use vLLM cluster
     VLLm,
     /// Let router decide based on heuristics
+    #[default]
     Auto,
 }
 
-impl Default for BackendPreference {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Inference request
 #[derive(Debug, Clone, Serialize, Deserialize)]
