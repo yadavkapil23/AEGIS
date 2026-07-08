@@ -1,7 +1,6 @@
 // Health check and readiness probes for Kubernetes
 // Supports liveness and readiness checks
 
-use anyhow::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use parking_lot::Mutex;
