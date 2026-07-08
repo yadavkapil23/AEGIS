@@ -983,11 +983,7 @@ impl ConsensusGrpcServer {
 
         let entries = replication.get_entries_for_follower(follower_id)?;
 
-        let prev_log_lsn = if follower.next_lsn > 1 {
-            follower.next_lsn - 1
-        } else {
-            0
-        };
+        let prev_log_lsn = follower.next_lsn.saturating_sub(1);
         let prev_log_term = if prev_log_lsn > 0 {
             log.get(prev_log_lsn).map(|e| e.term).unwrap_or(0)
         } else {
