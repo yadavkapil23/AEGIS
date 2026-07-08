@@ -6,7 +6,7 @@ use crate::replicated_log::LogEntry;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use anyhow::{anyhow, Result};
-use tracing::{debug, info, warn};
+use tracing::debug;
 use std::collections::HashMap;
 
 /// Replication state for a follower
