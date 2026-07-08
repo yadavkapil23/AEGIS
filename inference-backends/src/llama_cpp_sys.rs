@@ -162,6 +162,10 @@ extern "C" {
     // Model info
     pub fn llama_model_n_vocab(model: *mut LlamaModel) -> i32;
     pub fn llama_n_ctx(ctx: *mut LlamaContext) -> i32;
+    pub fn llama_token_eos(model: *mut LlamaModel) -> LlamaToken;
+
+    // Logits
+    pub fn llama_get_logits(ctx: *mut LlamaContext) -> *mut c_float;
 
     // Utility
     pub fn llama_print_system_info();
