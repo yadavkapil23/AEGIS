@@ -40,8 +40,7 @@ impl AllocationClient {
 
         for node in &nodes {
             match Channel::from_shared(node.clone())
-                .map(|ch| ch.connect_timeout(Duration::from_secs(5)))
-                .and_then(|ch| Ok(ch.connect_lazy()))
+                .map(|ch| ch.connect_timeout(Duration::from_secs(5))).map(|ch| ch.connect_lazy())
             {
                 Ok(channel) => {
                     let client = AllocationServiceClient::new(channel);
