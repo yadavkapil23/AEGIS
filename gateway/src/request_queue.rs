@@ -57,6 +57,13 @@ struct QueuedRequestEntry {
     timeout_ms: u64,
 }
 
+impl RequestQueueInner {
+    fn release_slot(&self) {
+        self.active_count.fetch_sub(1, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+}
+
 /// FIFO request queue with timeout support and async slot acquisition.
 pub struct RequestQueue {
     inner: Arc<RequestQueueInner>,
