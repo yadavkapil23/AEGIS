@@ -17,18 +17,15 @@ use aegis_proto::scheduling::{
 
 /// Health status of a remote node
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum HealthStatus {
     Healthy,
     Degraded,
     Dead,
+    #[default]
     Unknown,
 }
 
-impl Default for HealthStatus {
-    fn default() -> Self {
-        HealthStatus::Unknown
-    }
-}
 
 /// Remote node capacity info
 #[derive(Debug, Clone)]
