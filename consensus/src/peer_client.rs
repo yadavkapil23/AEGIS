@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::sync::Arc;
 use parking_lot::RwLock;
 use tonic::transport::Channel;
 use tracing::{info, warn, debug, error};
@@ -39,8 +38,7 @@ impl PeerClient {
     /// Connect to a peer node (lazy connection).
     pub fn connect_peer(&self, peer_id: &str, addr: &str) {
         match Channel::from_shared(addr.to_string())
-            .map(|ch| ch.connect_timeout(std::time::Duration::from_secs(3)))
-            .and_then(|ch| Ok(ch.connect_lazy()))
+            .map(|ch| ch.connect_timeout(std::time::Duration::from_secs(3))).map(|ch| ch.connect_lazy())
         {
             Ok(channel) => {
                 let client = ConsensusServiceClient::new(channel);
@@ -169,15 +167,12 @@ impl PeerClient {
         let mut votes = 0u64;
 
         for peer_id in &peer_ids {
-            match self.request_vote(
+            if let Ok((_term, granted)) = self.request_vote(
                 peer_id, candidate_id, term, last_log_index, last_log_term,
             ).await {
-                Ok((_term, granted)) => {
-                    if granted {
-                        votes += 1;
-                    }
+                if granted {
+                    votes += 1;
                 }
-                Err(_) => {}
             }
         }
 
