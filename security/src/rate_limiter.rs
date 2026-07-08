@@ -55,7 +55,7 @@ struct IdentityLimiter {
 }
 
 impl IdentityLimiter {
-    fn new(rps: u32, burst: u32) -> Self {
+    fn new(rps: u32, _burst: u32) -> Self {
         let quota = Quota::per_second(
             NonZeroU32::new(rps).unwrap_or_else(|| NonZeroU32::new(1).unwrap()),
         );
@@ -139,7 +139,7 @@ impl RateLimiter {
         }
 
         let allowed = {
-            let mut entry = self.key_limiters
+            let entry = self.key_limiters
                 .entry(api_key_id.to_string())
                 .or_insert_with(|| IdentityLimiter::new(self.config.per_key_rps, self.config.burst_size));
 
@@ -172,7 +172,7 @@ impl RateLimiter {
         }
 
         let allowed = {
-            let mut entry = self.ip_limiters
+            let entry = self.ip_limiters
                 .entry(ip_address.to_string())
                 .or_insert_with(|| IdentityLimiter::new(self.config.per_ip_rps, self.config.burst_size));
 
