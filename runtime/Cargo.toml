@@ -16,7 +16,6 @@ chrono.workspace = true
 aegis-proto = { path = "../proto" }
 aegis-gateway = { path = "../gateway" }
 aegis-scheduler = { path = "../scheduler" }
-aegis-speculative = { path = "../speculative" }
 aegis-safety = { path = "../safety" }
 aegis-audit = { path = "../audit" }
 aegis-consensus = { path = "../consensus" }
