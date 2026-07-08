@@ -3,7 +3,7 @@
 
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error, HttpResponse,
+    Error,
 };
 use futures_util::future::{ok, LocalBoxFuture, Ready};
 use std::rc::Rc;
