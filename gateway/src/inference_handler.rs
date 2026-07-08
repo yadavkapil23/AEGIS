@@ -2,6 +2,8 @@
 /// Handles incoming inference requests with validation
 
 use actix_web::{web, HttpResponse, post, get};
+use actix_web::web::Bytes;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tracing::{info, error};
 use crate::backend_manager::BackendManager;
@@ -259,6 +261,125 @@ fn validate_request(req: &InferenceRequest) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// POST /infer/stream - Execute inference with streaming response (SSE).
+///
+/// Returns Server-Sent Events where each event is a JSON token chunk.
+/// Clients can consume tokens as they are generated.
+#[post("/infer/stream")]
+pub async fn infer_stream_handler(
+    req: web::Json<InferenceRequest>,
+    llm_backend: web::Data<LLMBackend>,
+    metrics: web::Data<PrometheusMetrics>,
+) -> HttpResponse {
+    let start = Instant::now();
+
+    if let Err(e) = validate_request(&req) {
+        metrics.record_inference_error("validation_error");
+        return HttpResponse::BadRequest().json(InferenceError {
+            error: e,
+            error_code: "invalid_request".into(),
+        });
+    }
+
+    let model = req.model.clone();
+    let prompt = req.prompt.clone();
+    let max_tokens = req.max_tokens;
+    let temperature = req.temperature;
+    let top_p = req.top_p;
+
+    info!(model = %model, max_tokens = max_tokens, "Streaming inference started");
+
+    // Build streaming request to vLLM
+    let vllm_url = format!("{}/v1/completions", llm_backend.vllm_endpoint());
+    let stream_request = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
+        "stream": true,
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client
+        .post(&vllm_url)
+        .json(&stream_request)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            error!(error = %e, "Streaming request failed");
+            metrics.record_inference_error("stream_connect_failed");
+            return HttpResponse::BadGateway().json(InferenceError {
+                error: format!("Backend connection failed: {}", e),
+                error_code: "backend_error".into(),
+            });
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        error!(status = %status, body = %body, "Backend returned error");
+        metrics.record_inference_error("backend_error");
+        return HttpResponse::BadGateway().json(InferenceError {
+            error: format!("Backend error {}: {}", status, body),
+            error_code: "backend_error".into(),
+        });
+    }
+
+    // Stream the response as Server-Sent Events
+    let byte_stream = response.bytes_stream();
+    let metrics_clone = metrics.into_inner();
+    let model_clone = model.clone();
+
+    let sse_stream = byte_stream.filter_map(move |chunk| {
+        let metrics = metrics_clone.clone();
+        let model = model_clone.clone();
+        async move {
+            match chunk {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    // vLLM sends "data: {...}\n\n" lines
+                    let mut sse_data = String::new();
+                    for line in text.lines() {
+                        let line = line.trim();
+                        if let Some(json_str) = line.strip_prefix("data: ") {
+                            if json_str == "[DONE]" {
+                                sse_data.push_str("data: [DONE]\n\n");
+                                continue;
+                            }
+                            // Forward the JSON chunk as SSE
+                            sse_data.push_str(&format!("data: {}\n\n", json_str));
+                        }
+                    }
+                    if sse_data.is_empty() {
+                        None
+                    } else {
+                        Some(Ok::<Bytes, actix_web::Error>(Bytes::from(sse_data)))
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "Stream read error");
+                    metrics.record_inference_error("stream_read_error");
+                    None
+                }
+            }
+        }
+    });
+
+    let latency_ms = start.elapsed().as_millis() as u32;
+    info!(model = %model, latency_ms = latency_ms, "Streaming connection established");
+
+    HttpResponse::Ok()
+        .insert_header(("content-type", "text/event-stream"))
+        .insert_header(("cache-control", "no-cache"))
+        .insert_header(("connection", "keep-alive"))
+        .streaming(sse_stream)
 }
 
 #[cfg(test)]
