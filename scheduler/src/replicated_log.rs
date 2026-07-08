@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use anyhow::{anyhow, Result};
-use tracing::{debug, info};
+use tracing::debug;
 use serde::{Serialize, Deserialize};
 
 pub use crate::consensus::{Lsn, Term};
