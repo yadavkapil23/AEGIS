@@ -121,6 +121,7 @@ async fn main() -> std::io::Result<()> {
     );
     info!("Endpoints:");
     info!("  POST   /infer              - LLM inference");
+    info!("  POST   /infer/stream       - LLM inference (streaming SSE)");
     info!("  POST   /v1/allocate        - KV-cache allocation");
     info!("  POST   /v1/deallocate      - KV-cache deallocation");
     info!("  GET    /v1/stats            - Cache statistics");
@@ -148,6 +149,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_mw::NormalizePath::trim())
             // Inference endpoints
             .service(inference_handler::infer_handler)
+            .service(inference_handler::infer_stream_handler)
             .service(inference_handler::health_live)
             .service(inference_handler::health_ready)
             .service(inference_handler::health_startup)
