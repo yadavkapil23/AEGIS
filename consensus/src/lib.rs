@@ -11,8 +11,8 @@ pub use peer_client::PeerClient;
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use tracing::{info, warn, debug};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tracing::{info, debug};
 use std::time::{Duration, Instant};
 
 /// Node role in the cluster.
