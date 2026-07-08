@@ -36,7 +36,7 @@ pub struct KVCacheAllocator {
     fragmentation: Mutex<f64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CacheStats {
     pub total_blocks: usize,
     pub allocated_blocks: usize,
