@@ -152,7 +152,7 @@ impl RequestQueue {
             .inner
             .entries
             .iter()
-            .filter(|entry| now.duration_since(entry.value().queued_at).as_millis() as u64 > entry.value().timeout_ms)
+            .filter(|entry| now.duration_since(entry.value().queued_at).as_millis() as u64 >= entry.value().timeout_ms)
             .map(|entry| entry.key().clone())
             .collect();
 
