@@ -50,6 +50,7 @@ impl RateLimiter {
 mod tests {
     use super::*;
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn test_rate_limiter() {
