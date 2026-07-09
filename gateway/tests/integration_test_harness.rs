@@ -59,7 +59,7 @@ impl TestRequestBuilder {
         Self {
             request_id: Uuid::new_v4().to_string(),
             num_blocks: 4,
-            model: Some("llama-7b".to_string()),
+            model: Some("qwen2.5:0.5b".to_string()),
             priority: Some(5),
         }
     }
