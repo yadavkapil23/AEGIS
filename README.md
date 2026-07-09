@@ -10,8 +10,8 @@ A production-grade LLM inference gateway and orchestration system built in Rust.
 
 AEGIS is an **infrastructure-first LLM inference engine** that sits between your applications and your models. It is not a model wrapper — it is a full orchestration layer providing:
 
-- **Multi-Backend Orchestration**: Routes inference requests across vLLM, llama.cpp, Ollama, and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
-- **Streaming Inference**: Server-Sent Events (SSE) streaming from vLLM for real-time token delivery.
+- **Multi-Backend Orchestration**: Routes inference requests across Ollama (default, local), llama.cpp (optional native FFI), vLLM (optional, high-throughput self-hosted), and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
+- **Streaming Inference**: Server-Sent Events (SSE) streaming for real-time token delivery.
 - **Temperature & Top-P Sampling**: Proper softmax scaling with nucleus sampling in the native llama.cpp backend.
 - **Physical KV-Cache Management**: Allocates, evicts, and reuses LLM memory blocks with paged attention, zero-copy prefix sharing, and LRU eviction.
 - **Distributed Consensus**: Raft-inspired leader election and log replication across a 3-node scheduler cluster, with WAL persistence and state consistency validation.
@@ -103,9 +103,9 @@ Client Application
         |
         +---> Backend Manager (circuit breaker + bulkhead)
         |         |
-        |         +---> vLLM (primary, OpenAI-compatible API)
-        |         +---> llama.cpp (fallback, native FFI with temperature/top_p sampling)
-        |         +---> Ollama (fallback, OpenAI-compatible API)
+        |         +---> Ollama (default, local inference via OpenAI-compatible API)
+        |         +---> llama.cpp (optional, native FFI with temperature/top_p sampling)
+        |         +---> vLLM (optional, high-throughput self-hosted, OpenAI-compatible API)
         |         +---> HuggingFace (cloud fallback)
         |
         +---> KV-Cache Scheduler (gRPC, 3-node cluster)
