@@ -64,7 +64,7 @@ curl -X POST http://localhost:8080/infer \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
-    "model": "llama-7b",
+    "model": "qwen2.5:0.5b",
     "prompt": "Write a high performance Rust function.",
     "max_tokens": 100,
     "temperature": 0.7,
@@ -76,7 +76,7 @@ curl -N -X POST http://localhost:8080/infer/stream \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
-    "model": "llama-7b",
+    "model": "qwen2.5:0.5b",
     "prompt": "Tell me a story",
     "max_tokens": 200
   }'
@@ -131,7 +131,7 @@ Client Application
 gateway/              API Gateway (Actix-Web, main binary)
 scheduler/            Distributed KV-Cache Scheduler (gRPC, Raft consensus)
 consensus/            Consensus engine with peer communication (gRPC client)
-inference-backends/   Backend abstractions (vLLM, llama.cpp, HuggingFace)
+inference-backends/   Backend abstractions (Ollama, llama.cpp [optional], HuggingFace)
 security/             JWT, API keys, rate limiting, TLS
 resilience/           Circuit breaker, retry, timeout, degradation
 audit/                BLAKE3 hash chain audit engine
@@ -216,10 +216,10 @@ The Raft consensus protocol enables a 3-node scheduler cluster with automatic le
 
 ## Limitations
 
-- **C++ compilation required**: First build takes 5-10 minutes due to llama.cpp FFI compilation. Requires CMake, LLVM/Clang.
+- **Native llama.cpp is opt-in**: The `inference-backends` crate's native FFI (`llama_cpp_sys`/`llama_cpp_safe`) is gated behind the `native-llama` Cargo feature (off by default). Ollama covers local inference without requiring the C++/CMake toolchain. Enable `--features native-llama` only if you need the in-process llama.cpp backend.
 - **Single-GPU focus**: KV-cache allocator is designed for one GPU per node. Multi-GPU support is not yet implemented.
 - **No model training**: AEGIS is inference-only. Model fine-tuning is out of scope.
-- **Windows development**: FFI compilation requires LLVM 17+ and CMake in PATH. The llama.cpp native linker symbols (`llama_model_free`, `llama_model_default_params`, `llama_model_load_from_file`) must resolve. Linux is recommended for production deployments.
+- **Windows development**: With `native-llama` disabled (the default), the workspace builds and tests pass with no C++ toolchain required. Enabling `native-llama` requires LLVM 17+ and CMake in PATH, and the llama.cpp native linker symbols (`llama_model_free`, `llama_model_default_params`, `llama_model_load_from_file`) must resolve.
 
 ---
 
@@ -290,7 +290,7 @@ cargo clippy --fix --workspace --allow-dirty
 | Platform | Status | Notes |
 |----------|--------|-------|
 | Linux | Recommended | Full native compilation, production-ready |
-| Windows | Partial | Gateway + all pure-Rust crates compile. llama.cpp FFI requires LLVM 17+ with `LIBCLANG_PATH` set. Tests pass for all crates except `inference-backends` (native linker) |
+| Windows | Full (default) | All crates compile and tests pass with the default feature set (native llama.cpp FFI disabled). Enabling `native-llama` on `inference-backends` requires LLVM 17+ with `LIBCLANG_PATH` set and a working CMake/MSVC toolchain. |
 | macOS | Untested | Should work with Homebrew LLVM/CMake |
 
 ---
