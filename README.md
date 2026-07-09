@@ -4,6 +4,8 @@
 
 A production-grade LLM inference gateway and orchestration system built in Rust. AEGIS provides multi-backend inference routing, distributed KV-cache management with Raft consensus, cryptographic audit trails, and enterprise security — all with zero-cost abstractions and no garbage collector pauses.
 
+**Status: v3.0.0 — All 13 crates compile with zero errors. 18 unit/integration tests passing.**
+
 ---
 
 ## What is AEGIS?
@@ -217,7 +219,7 @@ The Raft consensus protocol enables a 3-node scheduler cluster with automatic le
 - **C++ compilation required**: First build takes 5-10 minutes due to llama.cpp FFI compilation. Requires CMake, LLVM/Clang.
 - **Single-GPU focus**: KV-cache allocator is designed for one GPU per node. Multi-GPU support is not yet implemented.
 - **No model training**: AEGIS is inference-only. Model fine-tuning is out of scope.
-- **Windows development**: FFI compilation requires specific LLVM/CMake path configuration. Linux is recommended for production.
+- **Windows development**: FFI compilation requires LLVM 17+ and CMake in PATH. The llama.cpp native linker symbols (`llama_model_free`, `llama_model_default_params`, `llama_model_load_from_file`) must resolve. Linux is recommended for production deployments.
 
 ---
 
@@ -241,10 +243,14 @@ make deploy
 ## Testing
 
 ```bash
-# Run all tests (17 integration tests + unit tests across all crates)
+# Run all tests (unit + integration across all crates)
 cargo test --workspace
 
-# Run gateway integration tests specifically
+# Run tests for specific crates
+cargo test -p resilience         # 8 tests (circuit breaker, retry, timeout, degradation)
+cargo test -p observability      # 10 tests (metrics, health, tracing, errors)
+
+# Run gateway integration tests
 cargo test -p aegis-gateway --test http_endpoint_tests
 
 # Run benchmarks
@@ -254,10 +260,15 @@ cargo bench -p aegis-benchmarks
 The test suite covers:
 - HTTP health endpoints (liveness, readiness, startup)
 - Request validation (model, prompt, tokens, temperature, top_p bounds)
-- Backend circuit breaker state transitions
+- Backend circuit breaker state transitions (Closed→Open, Open→HalfOpen→Closed)
+- Graceful degradation with fallback execution
+- Retry logic with exponential backoff
+- Timeout handling
 - KV-cache allocation and deallocation
 - Audit trail integrity verification
 - Consensus leader election
+- Prometheus metrics gathering
+- Tracing configuration defaults
 
 ---
 
@@ -273,6 +284,14 @@ cargo clippy --workspace
 # Auto-fix lint warnings
 cargo clippy --fix --workspace --allow-dirty
 ```
+
+### Platform Notes
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| Linux | Recommended | Full native compilation, production-ready |
+| Windows | Partial | Gateway + all pure-Rust crates compile. llama.cpp FFI requires LLVM 17+ with `LIBCLANG_PATH` set. Tests pass for all crates except `inference-backends` (native linker) |
+| macOS | Untested | Should work with Homebrew LLVM/CMake |
 
 ---
 
