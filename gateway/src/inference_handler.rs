@@ -439,8 +439,8 @@ fn validate_request(req: &InferenceRequest) -> Result<(), String> {
     if req.model.is_empty() {
         return Err("model cannot be empty".to_string());
     }
-    if !req.model.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err("model name contains invalid characters".to_string());
+    if !req.model.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.') {
+        return Err("model name contains invalid characters (alphanumeric, '-', '_', ':', '.' allowed)".to_string());
     }
     if req.prompt.is_empty() {
         return Err("prompt cannot be empty".to_string());
