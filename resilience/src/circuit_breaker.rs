@@ -129,7 +129,7 @@ impl CircuitBreaker {
                 let req = self.request_count.fetch_add(1, Ordering::Relaxed);
 
                 // Check if we should close if there are failures
-                if req > self.config.sample_size as u64 {
+                if req >= self.config.sample_size as u64 {
                     self.evaluate_state();
                 }
             }
@@ -161,13 +161,11 @@ impl CircuitBreaker {
         match state {
             CircuitState::Closed => {
                 let _failures = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-                let requests = self.request_count.fetch_add(1, Ordering::Relaxed) + 1;
+                let _requests = self.request_count.fetch_add(1, Ordering::Relaxed) + 1;
 
                 *self.last_failure_time.write() = Some(Utc::now());
 
-                if requests > self.config.sample_size as u64 {
-                    self.evaluate_state();
-                }
+                self.evaluate_state();
             }
             CircuitState::HalfOpen => {
                 // One failure in half-open returns to open
