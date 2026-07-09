@@ -973,7 +973,7 @@ mod tests {
             max_tokens: 100,
             temperature: Some(0.7),
             top_p: Some(0.9),
-            model: Some("llama-7b".to_string()),
+            model: Some("qwen2.5:0.5b".to_string()),
             stream: false,
         };
 
