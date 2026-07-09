@@ -159,12 +159,11 @@ Open **http://localhost:3000** for Grafana dashboards and **http://localhost:909
 
 ## Verification Status
 
-**✅ Fully Verified — End-to-End Functional**
 
 | Component | Status | Notes |
 |-----------|--------|-------|
 | **Workspace Build** | ✅ Passing | All 13 crates compile with zero errors (default features; native llama.cpp FFI is opt-in via `native-llama`) |
-| **Model Name Validation** | ✅ Fixed | Accepts Ollama-style names like `qwen2.5:0.5b` (colons and dots now allowed in model names) |
+| **Model Name Validation** | ✅ Verified | Accepts Ollama-style names like `qwen2.5:0.5b` (colons and dots now allowed in model names) |
 | **PostgreSQL Connection** | ✅ Verified | Connects to postgres://localhost:5433, migrations run, API keys loaded |
 | **Ollama Integration** | ✅ Verified | Real Ollama endpoint (http://localhost:11434) responds correctly, model `qwen2.5:0.5b` pulled and generates text |
 | **Gateway HTTP Server** | ✅ Running | Boots on port 8080, endpoints registered, all middleware initialized |
