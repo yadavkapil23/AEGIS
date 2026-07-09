@@ -1,16 +1,13 @@
 /// Inference Request Handler
-/// Handles incoming inference requests with validation
+/// Handles incoming inference requests with validation, metrics, and audit logging
 
 use actix_web::{web, HttpResponse, post, get};
 use actix_web::web::Bytes;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tracing::{info, error};
-use crate::backend_manager::BackendManager;
-use crate::metrics::PrometheusMetrics;
-use crate::llm_backend::LLMBackend;
-use crate::database::DbPool;
 use std::time::Instant;
+use crate::middleware::GatewayState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InferenceRequest {
@@ -29,6 +26,7 @@ pub struct InferenceResponse {
     pub output: Option<String>,
     pub tokens_generated: u32,
     pub latency_ms: u32,
+    pub backend: Option<String>,
     pub error: Option<String>,
 }
 
@@ -42,20 +40,35 @@ pub struct InferenceError {
 #[post("/infer")]
 pub async fn infer_handler(
     req: web::Json<InferenceRequest>,
-    _manager: web::Data<BackendManager>,
-    metrics: web::Data<PrometheusMetrics>,
-    llm_backend: web::Data<LLMBackend>,
-    db: web::Data<DbPool>,
+    state: web::Data<GatewayState>,
 ) -> HttpResponse {
     let start = Instant::now();
 
     // Validate request
     if let Err(e) = validate_request(&req) {
         error!("Invalid request: {}", e);
-        metrics.record_inference_error("validation_error");
+        state.metrics.record_inference_error("validation_error");
         return HttpResponse::BadRequest().json(InferenceError {
             error: e,
             error_code: "invalid_request".to_string(),
+        });
+    }
+
+    // Check circuit breaker
+    if let Err(e) = state.backend_manager.check_circuit_breaker() {
+        state.metrics.record_inference_error("circuit_breaker_open");
+        return HttpResponse::ServiceUnavailable().json(InferenceError {
+            error: format!("Service temporarily unavailable: {}", e),
+            error_code: "circuit_breaker_open".to_string(),
+        });
+    }
+
+    // Acquire bulkhead slot
+    if !state.backend_manager.try_acquire_bulkhead() {
+        state.metrics.record_inference_error("bulkhead_rejected");
+        return HttpResponse::ServiceUnavailable().json(InferenceError {
+            error: "Too many concurrent requests".to_string(),
+            error_code: "bulkhead_rejected".to_string(),
         });
     }
 
@@ -66,8 +79,8 @@ pub async fn infer_handler(
         req.max_tokens
     );
 
-    // Call real LLM backend (vLLM with fallback to llama.cpp)
-    match llm_backend
+    // Call LLM backend (vLLM with fallback to llama.cpp, Ollama, HuggingFace)
+    let result = state.llm_backend
         .infer(
             &req.model,
             &req.prompt,
@@ -75,26 +88,33 @@ pub async fn infer_handler(
             req.temperature,
             req.top_p,
         )
-        .await
-    {
+        .await;
+
+    // Release bulkhead slot
+    state.backend_manager.release_bulkhead();
+
+    match result {
         Ok(result) => {
             let latency_ms = start.elapsed().as_millis() as u32;
 
-            // Record metrics
-            metrics.record_inference_success(
+            // Record success in circuit breaker
+            state.backend_manager.record_success();
+
+            // Record Prometheus metrics
+            state.metrics.record_inference_success(
                 &req.model,
                 latency_ms,
                 result.tokens_generated,
             );
 
             // Log to database (async, non-blocking)
-            let db_clone = db.clone();
+            let db = state.db_pool.clone();
             let model = req.model.clone();
             let backend = result.backend.clone();
             let tokens = result.tokens_generated;
             tokio::spawn(async move {
                 if let Err(e) = crate::database::log_inference(
-                    &db_clone,
+                    &db,
                     &model,
                     "success",
                     latency_ms as i32,
@@ -103,6 +123,24 @@ pub async fn infer_handler(
                     None,
                 ).await {
                     error!("Failed to log inference to database: {}", e);
+                }
+            });
+
+            // Audit log (async, non-blocking)
+            let db_audit = state.db_pool.clone();
+            let audit_model = req.model.clone();
+            let audit_backend = result.backend.clone();
+            tokio::spawn(async move {
+                if let Err(e) = crate::database::log_audit(
+                    &db_audit,
+                    "inference",
+                    Some("model"),
+                    Some(&audit_model),
+                    None,
+                    Some(&format!("backend={},tokens={}", audit_backend, tokens)),
+                    "success",
+                ).await {
+                    error!("Failed to write audit log: {}", e);
                 }
             });
 
@@ -116,22 +154,26 @@ pub async fn infer_handler(
                 output: Some(result.output),
                 tokens_generated: result.tokens_generated,
                 latency_ms,
+                backend: Some(result.backend),
                 error: None,
             })
         }
         Err(e) => {
             let latency_ms = start.elapsed().as_millis() as u32;
 
+            // Record failure in circuit breaker
+            state.backend_manager.record_failure();
+
             error!("Inference failed: {}", e);
-            metrics.record_inference_error("inference_failed");
+            state.metrics.record_inference_error("inference_failed");
 
             // Log failure to database (async, non-blocking)
-            let db_clone = db.clone();
+            let db = state.db_pool.clone();
             let model = req.model.clone();
             let error_msg = e.clone();
             tokio::spawn(async move {
                 if let Err(db_err) = crate::database::log_inference(
-                    &db_clone,
+                    &db,
                     &model,
                     "failure",
                     latency_ms as i32,
@@ -140,6 +182,24 @@ pub async fn infer_handler(
                     Some(&error_msg),
                 ).await {
                     error!("Failed to log inference failure to database: {}", db_err);
+                }
+            });
+
+            // Audit log (async, non-blocking)
+            let db_audit = state.db_pool.clone();
+            let audit_model = req.model.clone();
+            let audit_error = e.clone();
+            tokio::spawn(async move {
+                if let Err(ae) = crate::database::log_audit(
+                    &db_audit,
+                    "inference",
+                    Some("model"),
+                    Some(&audit_model),
+                    None,
+                    Some(&format!("error={}", audit_error)),
+                    "failure",
+                ).await {
+                    error!("Failed to write audit log: {}", ae);
                 }
             });
 
@@ -153,16 +213,12 @@ pub async fn infer_handler(
 
 /// GET /health/ready - Readiness probe
 #[get("/health/ready")]
-pub async fn health_ready(
-    _manager: web::Data<BackendManager>,
-    llm_backend: web::Data<LLMBackend>,
-) -> HttpResponse {
-    let vllm_healthy = llm_backend.check_vllm_health().await;
-    let llamacpp_healthy = llm_backend.check_llamacpp_health().await;
-    let ollama_healthy = llm_backend.check_ollama_health().await;
-    let hf_healthy = llm_backend.check_hf_health().await;
+pub async fn health_ready(state: web::Data<GatewayState>) -> HttpResponse {
+    let vllm_healthy = state.llm_backend.check_vllm_health().await;
+    let llamacpp_healthy = state.llm_backend.check_llamacpp_health().await;
+    let ollama_healthy = state.llm_backend.check_ollama_health().await;
+    let hf_healthy = state.llm_backend.check_hf_health().await;
 
-    // Ready if at least one backend is healthy
     let ready = vllm_healthy || llamacpp_healthy || ollama_healthy || hf_healthy;
 
     let status_code = if ready {
@@ -187,8 +243,8 @@ pub async fn health_ready(
 
 /// GET /backends/status - Get detailed backend status
 #[get("/backends/status")]
-pub async fn backends_status(llm_backend: web::Data<LLMBackend>) -> HttpResponse {
-    let status = llm_backend.get_backend_status().await;
+pub async fn backends_status(state: web::Data<GatewayState>) -> HttpResponse {
+    let status = state.llm_backend.get_backend_status().await;
     HttpResponse::Ok().json(status)
 }
 
@@ -210,70 +266,214 @@ pub async fn health_startup() -> HttpResponse {
     }))
 }
 
-/// GET /metrics - Prometheus metrics
+// ── OpenAI-compatible Chat Completions ─────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatCompletionRequest {
+    pub model: String,
+    pub messages: Vec<ChatMessage>,
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub stream: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatCompletionResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: String,
+    pub choices: Vec<ChatChoice>,
+    pub usage: ChatUsage,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatChoice {
+    pub index: u32,
+    pub message: ChatMessage,
+    pub finish_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+/// POST /v1/chat/completions - OpenAI-compatible chat completions
+#[post("/v1/chat/completions")]
+pub async fn chat_completions_handler(
+    req: web::Json<ChatCompletionRequest>,
+    state: web::Data<GatewayState>,
+) -> HttpResponse {
+    let start = Instant::now();
+
+    if req.messages.is_empty() {
+        state.metrics.record_inference_error("validation_error");
+        return HttpResponse::BadRequest().json(InferenceError {
+            error: "messages cannot be empty".to_string(),
+            error_code: "invalid_request".to_string(),
+        });
+    }
+
+    // Convert messages to a single prompt string
+    let prompt: String = req.messages
+        .iter()
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let max_tokens = req.max_tokens.unwrap_or(1024);
+
+    // Validate
+    if prompt.is_empty() || prompt.len() > 100000 {
+        state.metrics.record_inference_error("validation_error");
+        return HttpResponse::BadRequest().json(InferenceError {
+            error: "invalid messages".to_string(),
+            error_code: "invalid_request".to_string(),
+        });
+    }
+
+    // Check circuit breaker
+    if let Err(e) = state.backend_manager.check_circuit_breaker() {
+        state.metrics.record_inference_error("circuit_breaker_open");
+        return HttpResponse::ServiceUnavailable().json(InferenceError {
+            error: format!("Service temporarily unavailable: {}", e),
+            error_code: "circuit_breaker_open".to_string(),
+        });
+    }
+
+    // Acquire bulkhead
+    if !state.backend_manager.try_acquire_bulkhead() {
+        state.metrics.record_inference_error("bulkhead_rejected");
+        return HttpResponse::ServiceUnavailable().json(InferenceError {
+            error: "Too many concurrent requests".to_string(),
+            error_code: "bulkhead_rejected".to_string(),
+        });
+    }
+
+    let result = state.llm_backend
+        .infer(&req.model, &prompt, max_tokens, req.temperature, req.top_p)
+        .await;
+
+    state.backend_manager.release_bulkhead();
+
+    match result {
+        Ok(result) => {
+            let latency_ms = start.elapsed().as_millis() as u32;
+            state.backend_manager.record_success();
+            state.metrics.record_inference_success(&req.model, latency_ms, result.tokens_generated);
+
+            let db = state.db_pool.clone();
+            let model = req.model.clone();
+            let backend = result.backend.clone();
+            let tokens = result.tokens_generated;
+            tokio::spawn(async move {
+                let _ = crate::database::log_inference(
+                    &db, &model, "success", latency_ms as i32,
+                    Some(tokens as i32), Some(&backend), None,
+                ).await;
+            });
+
+            let response_id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
+            HttpResponse::Ok().json(ChatCompletionResponse {
+                id: response_id,
+                object: "chat.completion".to_string(),
+                created: chrono::Utc::now().timestamp(),
+                model: req.model.clone(),
+                choices: vec![ChatChoice {
+                    index: 0,
+                    message: ChatMessage {
+                        role: "assistant".to_string(),
+                        content: result.output,
+                    },
+                    finish_reason: Some("stop".to_string()),
+                }],
+                usage: ChatUsage {
+                    prompt_tokens: result.prompt_tokens,
+                    completion_tokens: result.tokens_generated,
+                    total_tokens: result.total_tokens,
+                },
+            })
+        }
+        Err(e) => {
+            state.backend_manager.record_failure();
+            state.metrics.record_inference_error("inference_failed");
+            HttpResponse::InternalServerError().json(InferenceError {
+                error: format!("Inference failed: {}", e),
+                error_code: "inference_error".to_string(),
+            })
+        }
+    }
+}
+
+/// GET /metrics - Prometheus metrics (real export)
 #[get("/metrics")]
-pub async fn metrics_handler(_metrics: web::Data<PrometheusMetrics>) -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/plain; version=0.0.4; charset=utf-8")
-        .body("# AEGIS Gateway Metrics\n")
+pub async fn metrics_handler(state: web::Data<GatewayState>) -> HttpResponse {
+    match state.metrics.export() {
+        Ok(metrics_text) => HttpResponse::Ok()
+            .content_type("text/plain; version=0.0.4; charset=utf-8")
+            .body(metrics_text),
+        Err(e) => {
+            error!("Failed to export metrics: {}", e);
+            HttpResponse::InternalServerError()
+                .body(format!("Failed to export metrics: {}", e))
+        }
+    }
 }
 
 /// Validate inference request
 fn validate_request(req: &InferenceRequest) -> Result<(), String> {
-    // Validate model name
     if req.model.is_empty() {
         return Err("model cannot be empty".to_string());
     }
-
     if !req.model.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
         return Err("model name contains invalid characters".to_string());
     }
-
-    // Validate prompt
     if req.prompt.is_empty() {
         return Err("prompt cannot be empty".to_string());
     }
-
     if req.prompt.len() > 100000 {
         return Err("prompt is too long (max 100,000 characters)".to_string());
     }
-
-    // Validate max_tokens
     if req.max_tokens < 1 || req.max_tokens > 32000 {
         return Err("max_tokens must be between 1 and 32000".to_string());
     }
-
-    // Validate temperature if provided
     if let Some(temp) = req.temperature {
         if !(0.0..=2.0).contains(&temp) {
             return Err("temperature must be between 0.0 and 2.0".to_string());
         }
     }
-
-    // Validate top_p if provided
     if let Some(top_p) = req.top_p {
         if !(0.0..=1.0).contains(&top_p) {
             return Err("top_p must be between 0.0 and 1.0".to_string());
         }
     }
-
     Ok(())
 }
 
-/// POST /infer/stream - Execute inference with streaming response (SSE).
-///
-/// Returns Server-Sent Events where each event is a JSON token chunk.
-/// Clients can consume tokens as they are generated.
+/// POST /infer/stream - Execute inference with streaming SSE response
 #[post("/infer/stream")]
 pub async fn infer_stream_handler(
     req: web::Json<InferenceRequest>,
-    llm_backend: web::Data<LLMBackend>,
-    metrics: web::Data<PrometheusMetrics>,
+    state: web::Data<GatewayState>,
 ) -> HttpResponse {
     let start = Instant::now();
 
     if let Err(e) = validate_request(&req) {
-        metrics.record_inference_error("validation_error");
+        state.metrics.record_inference_error("validation_error");
         return HttpResponse::BadRequest().json(InferenceError {
             error: e,
             error_code: "invalid_request".into(),
@@ -289,7 +489,7 @@ pub async fn infer_stream_handler(
     info!(model = %model, max_tokens = max_tokens, "Streaming inference started");
 
     // Build streaming request to vLLM
-    let vllm_url = format!("{}/v1/completions", llm_backend.vllm_endpoint());
+    let vllm_url = format!("{}/v1/completions", state.llm_backend.vllm_endpoint());
     let stream_request = serde_json::json!({
         "model": model,
         "prompt": prompt,
@@ -310,7 +510,8 @@ pub async fn infer_stream_handler(
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Streaming request failed");
-            metrics.record_inference_error("stream_connect_failed");
+            state.metrics.record_inference_error("stream_connect_failed");
+            state.backend_manager.record_failure();
             return HttpResponse::BadGateway().json(InferenceError {
                 error: format!("Backend connection failed: {}", e),
                 error_code: "backend_error".into(),
@@ -322,7 +523,8 @@ pub async fn infer_stream_handler(
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         error!(status = %status, body = %body, "Backend returned error");
-        metrics.record_inference_error("backend_error");
+        state.metrics.record_inference_error("backend_error");
+        state.backend_manager.record_failure();
         return HttpResponse::BadGateway().json(InferenceError {
             error: format!("Backend error {}: {}", status, body),
             error_code: "backend_error".into(),
@@ -331,8 +533,11 @@ pub async fn infer_stream_handler(
 
     // Stream the response as Server-Sent Events
     let byte_stream = response.bytes_stream();
-    let metrics_clone = metrics.into_inner();
+    let metrics_clone = state.metrics.clone();
     let model_clone = model.clone();
+    let db_clone = state.db_pool.clone();
+
+    state.backend_manager.record_success();
 
     let sse_stream = byte_stream.filter_map(move |chunk| {
         let metrics = metrics_clone.clone();
@@ -341,7 +546,6 @@ pub async fn infer_stream_handler(
             match chunk {
                 Ok(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
-                    // vLLM sends "data: {...}\n\n" lines
                     let mut sse_data = String::new();
                     for line in text.lines() {
                         let line = line.trim();
@@ -350,7 +554,6 @@ pub async fn infer_stream_handler(
                                 sse_data.push_str("data: [DONE]\n\n");
                                 continue;
                             }
-                            // Forward the JSON chunk as SSE
                             sse_data.push_str(&format!("data: {}\n\n", json_str));
                         }
                     }
@@ -370,6 +573,23 @@ pub async fn infer_stream_handler(
     });
 
     let latency_ms = start.elapsed().as_millis() as u32;
+    let tokens_est = max_tokens; // Estimate for streaming
+    state.metrics.record_inference_success(&model, latency_ms, tokens_est);
+
+    // Audit log for streaming request (clone model before moving into closure)
+    let model_for_audit = model.clone();
+    tokio::spawn(async move {
+        let _ = crate::database::log_audit(
+            &db_clone,
+            "inference_stream",
+            Some("model"),
+            Some(&model_for_audit),
+            None,
+            None,
+            "success",
+        ).await;
+    });
+
     info!(model = %model, latency_ms = latency_ms, "Streaming connection established");
 
     HttpResponse::Ok()
@@ -392,7 +612,6 @@ mod tests {
             temperature: Some(0.7),
             top_p: Some(0.9),
         };
-
         assert!(validate_request(&req).is_ok());
     }
 
@@ -405,7 +624,6 @@ mod tests {
             temperature: None,
             top_p: None,
         };
-
         assert!(validate_request(&req).is_err());
     }
 
@@ -418,7 +636,6 @@ mod tests {
             temperature: None,
             top_p: None,
         };
-
         assert!(validate_request(&req).is_err());
     }
 
@@ -431,7 +648,6 @@ mod tests {
             temperature: None,
             top_p: None,
         };
-
         assert!(validate_request(&req).is_err());
     }
 
@@ -444,7 +660,6 @@ mod tests {
             temperature: Some(3.0),
             top_p: None,
         };
-
         assert!(validate_request(&req).is_err());
     }
 
@@ -457,7 +672,6 @@ mod tests {
             temperature: None,
             top_p: Some(1.5),
         };
-
         assert!(validate_request(&req).is_err());
     }
 }
