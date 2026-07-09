@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_record_inference_success() {
         let metrics = PrometheusMetrics::new().unwrap();
-        metrics.record_inference_success("llama-7b", 250, 50);
+        metrics.record_inference_success("qwen2.5:0.5b", 250, 50);
 
         let export = metrics.export().unwrap();
         assert!(export.contains("inference_requests_total"));
