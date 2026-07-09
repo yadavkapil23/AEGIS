@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
 
             // Create a request
             let request = InferenceRequest::new(
-                "mistralai/Mistral-7B-Instruct-v0.2",
+                "Qwen/Qwen2.5-0.5B-Instruct",
                 "What is the capital of France?",
             )
             .with_max_tokens(100)
