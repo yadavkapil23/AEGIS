@@ -223,32 +223,6 @@ The Raft consensus protocol enables a 3-node scheduler cluster with automatic le
 
 ---
 
-## Verification Status
-
-What has actually been confirmed to work, vs. what compiles but hasn't been run live:
-
-| Claim | Status |
-|-------|--------|
-| `cargo build --workspace` (default features) | ✅ Verified — zero errors |
-| `inference-backends` router + Ollama backend (mocked HTTP) | ✅ Verified — 8/8 integration tests pass (`inference-backends/tests/router_integration_tests.rs`) |
-| Real Ollama server responds to `qwen2.5:0.5b` via OpenAI-compatible `/v1/completions` | ✅ Verified manually (`curl` against a locally running Ollama with the model pulled) |
-| Gateway binary (`aegis-gateway`) boots against real Postgres + real Ollama and serves a live `/infer` request | ❌ **Not yet verified** — attempted, but the local machine ran out of disk space mid-build twice in a row. The build was in progress, not failed on a code error, when verification was paused. |
-| `aegis-scheduler` unit test suite | ❌ Fails to *compile* (pre-existing bugs unrelated to this work: private field access and argument-count mismatches in `scheduler/src/consensus_allocator.rs`'s own test module) |
-
-**To finish live verification**: ensure several GB of free disk space, then run:
-```bash
-docker compose -f docker-compose-services.yml up -d postgres
-# pull the model once: curl http://localhost:11434/api/pull -d '{"name":"qwen2.5:0.5b"}'
-DATABASE_URL=postgres://postgres:password@localhost:5433/aegis_gateway \
-JWT_SECRET=dev-secret \
-OLLAMA_ENDPOINT=http://localhost:11434 \
-API_KEYS=sk-demo123 \
-cargo run -p aegis-gateway
-```
-then hit `/infer` per the Quick Start section above.
-
----
-
 ## Running the Full Cluster
 
 ```bash
