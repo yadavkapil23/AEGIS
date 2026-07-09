@@ -11,6 +11,8 @@ A production-grade LLM inference gateway and orchestration system built in Rust.
 AEGIS is an **infrastructure-first LLM inference engine** that sits between your applications and your models. It is not a model wrapper — it is a full orchestration layer providing:
 
 - **Multi-Backend Orchestration**: Routes inference requests across vLLM, llama.cpp, Ollama, and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
+- **Streaming Inference**: Server-Sent Events (SSE) streaming from vLLM for real-time token delivery.
+- **Temperature & Top-P Sampling**: Proper softmax scaling with nucleus sampling in the native llama.cpp backend.
 - **Physical KV-Cache Management**: Allocates, evicts, and reuses LLM memory blocks with paged attention, zero-copy prefix sharing, and LRU eviction.
 - **Distributed Consensus**: Raft-inspired leader election and log replication across a 3-node scheduler cluster, with WAL persistence and state consistency validation.
 - **Cryptographic Audit Engine**: Chains every inference event into a BLAKE3 hash tree stored in PostgreSQL — mathematically tamper-proof execution logs for compliance.
@@ -55,13 +57,26 @@ The server binds to `0.0.0.0:8080` and accepts authenticated inference requests.
 ### Step 4: Test the API
 
 ```bash
+# Synchronous inference
 curl -X POST http://localhost:8080/infer \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
     "model": "llama-7b",
     "prompt": "Write a high performance Rust function.",
-    "max_tokens": 100
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "top_p": 0.9
+  }'
+
+# Streaming inference (SSE)
+curl -N -X POST http://localhost:8080/infer/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: sk-demo123" \
+  -d '{
+    "model": "llama-7b",
+    "prompt": "Tell me a story",
+    "max_tokens": 200
   }'
 ```
 
@@ -83,10 +98,13 @@ Client Application
         v
   Request Validator -> Inference Service
         |
+        +---> POST /infer (synchronous, full response)
+        +---> POST /infer/stream (SSE streaming, token-by-token)
+        |
         +---> Backend Manager (circuit breaker + bulkhead)
         |         |
         |         +---> vLLM (primary, OpenAI-compatible API)
-        |         +---> llama.cpp (fallback, HTTP or native FFI)
+        |         +---> llama.cpp (fallback, native FFI with temperature/top_p sampling)
         |         +---> Ollama (fallback, OpenAI-compatible API)
         |         +---> HuggingFace (cloud fallback)
         |
@@ -129,7 +147,8 @@ benchmarks/           Criterion benchmarks
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/infer` | Run LLM inference (requires auth) |
+| POST | `/infer` | Run LLM inference (synchronous, requires auth) |
+| POST | `/infer/stream` | Run LLM inference (SSE streaming, token-by-token) |
 | POST | `/v1/allocate` | Allocate KV-cache blocks via scheduler |
 | POST | `/v1/deallocate` | Release KV-cache blocks |
 | GET | `/v1/stats` | Cache statistics |
@@ -137,10 +156,21 @@ benchmarks/           Criterion benchmarks
 | GET | `/health` | Deep health check (all subsystems) |
 | GET | `/ready` | Readiness probe |
 | GET | `/health/live` | Liveness probe |
+| GET | `/health/startup` | Startup probe |
 | GET | `/metrics` | Prometheus metrics |
 | POST | `/api/keys` | Create API key |
 | GET | `/api/keys` | List API keys (masked) |
 | DELETE | `/api/keys/{key}` | Revoke API key |
+
+---
+
+## Inference Sampling
+
+The native llama.cpp backend supports proper sampling (not just greedy argmax):
+
+- **Temperature scaling**: Controls randomness. 0.0 = deterministic, 1.0 = balanced, 2.0 = very random.
+- **Top-P (nucleus) sampling**: Filters tokens by cumulative probability. 0.9 = keeps top 90% probability mass.
+- **Greedy fallback**: When temperature is 0.0, falls back to argmax for deterministic output.
 
 ---
 
@@ -158,6 +188,7 @@ benchmarks/           Criterion benchmarks
 | Tracing | OpenTelemetry + Jaeger | Distributed tracing across all components |
 | Rate Limiting | Token bucket (governor) | Burst-friendly, per-identity tracking |
 | TLS | rustls | Pure Rust, no OpenSSL dependency |
+| Streaming | Server-Sent Events (SSE) | Real-time token delivery over HTTP |
 
 ---
 
@@ -171,6 +202,10 @@ The BLAKE3 audit engine produces mathematically tamper-proof logs of every AI in
 
 The KV-Cache Scheduler reuses physical memory blocks across requests sharing common prefixes (like system prompts). In a 500-developer team running a local Copilot alternative, this reduces GPU memory usage by 60-80% and latency by 40%.
 
+### High-Speed Autonomous Agents
+
+Streaming inference via SSE enables agents to process tokens as they arrive, reducing end-to-end latency for multi-step reasoning chains. Combined with speculative decoding at the backend level, agents can chain hundreds of thoughts together in seconds.
+
 ### Distributed AI Infrastructure
 
 The Raft consensus protocol enables a 3-node scheduler cluster with automatic leader election, WAL persistence, and cross-node consistency validation. If a node fails, the cluster continues operating with the remaining nodes.
@@ -182,7 +217,6 @@ The Raft consensus protocol enables a 3-node scheduler cluster with automatic le
 - **C++ compilation required**: First build takes 5-10 minutes due to llama.cpp FFI compilation. Requires CMake, LLVM/Clang.
 - **Single-GPU focus**: KV-cache allocator is designed for one GPU per node. Multi-GPU support is not yet implemented.
 - **No model training**: AEGIS is inference-only. Model fine-tuning is out of scope.
-- **No HTTP streaming**: Current HTTP API returns complete responses. gRPC supports streaming; HTTP streaming is planned.
 - **Windows development**: FFI compilation requires specific LLVM/CMake path configuration. Linux is recommended for production.
 
 ---
@@ -204,20 +238,40 @@ make deploy
 
 ---
 
-## Development
+## Testing
 
 ```bash
-# Check compilation (no errors)
-cargo check --workspace
-
-# Run tests
+# Run all tests (17 integration tests + unit tests across all crates)
 cargo test --workspace
+
+# Run gateway integration tests specifically
+cargo test -p aegis-gateway --test http_endpoint_tests
 
 # Run benchmarks
 cargo bench -p aegis-benchmarks
+```
 
-# Lint
+The test suite covers:
+- HTTP health endpoints (liveness, readiness, startup)
+- Request validation (model, prompt, tokens, temperature, top_p bounds)
+- Backend circuit breaker state transitions
+- KV-cache allocation and deallocation
+- Audit trail integrity verification
+- Consensus leader election
+
+---
+
+## Development
+
+```bash
+# Check compilation (zero errors)
+cargo check --workspace
+
+# Lint (zero errors, warnings are pre-existing dead code)
 cargo clippy --workspace
+
+# Auto-fix lint warnings
+cargo clippy --fix --workspace --allow-dirty
 ```
 
 ---
