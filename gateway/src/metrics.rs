@@ -216,75 +216,6 @@ impl Default for PrometheusMetrics {
     }
 }
 
-/// GatewayMetrics for backward compatibility
-pub struct GatewayMetrics {
-    pub prometheus: PrometheusMetrics,
-    total_requests: AtomicU64,
-}
-
-impl GatewayMetrics {
-    pub fn new() -> Self {
-        Self {
-            prometheus: PrometheusMetrics::default(),
-            total_requests: AtomicU64::new(0),
-        }
-    }
-
-    pub fn record_request(&self) {
-        self.total_requests.fetch_add(1, Ordering::SeqCst);
-    }
-
-    pub fn record_completed(&self) {}
-    pub fn record_failed(&self) {}
-    pub fn record_rate_limited(&self) {
-        self.prometheus.record_rate_limited();
-    }
-    pub fn record_latency(&self, _latency_ms: f64) {}
-    pub fn record_queue_depth(&self, _depth: usize) {}
-    pub fn record_queued(&self) {}
-    pub fn record_dequeued(&self) {}
-
-    pub fn get_total_requests(&self) -> u64 {
-        self.total_requests.load(Ordering::SeqCst)
-    }
-
-    pub fn get_total_completed(&self) -> u64 { 0 }
-    pub fn get_total_failed(&self) -> u64 { 0 }
-    pub fn get_total_rate_limited(&self) -> u64 { 0 }
-    pub fn get_active_streams(&self) -> u64 { 0 }
-    pub fn get_avg_latency_ms(&self) -> f64 { 0.0 }
-    pub fn get_p99_latency_ms(&self) -> f64 { 0.0 }
-
-    pub fn summary(&self) -> GatewayMetricsSummary {
-        GatewayMetricsSummary {
-            total_requests: self.get_total_requests(),
-            total_completed: 0,
-            total_failed: 0,
-            total_rate_limited: 0,
-            active_streams: 0,
-            avg_latency_ms: 0.0,
-            p99_latency_ms: 0.0,
-        }
-    }
-}
-
-impl Default for GatewayMetrics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GatewayMetricsSummary {
-    pub total_requests: u64,
-    pub total_completed: u64,
-    pub total_failed: u64,
-    pub total_rate_limited: u64,
-    pub active_streams: u64,
-    pub avg_latency_ms: f64,
-    pub p99_latency_ms: f64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,17 +234,5 @@ mod tests {
         let export = metrics.export().unwrap();
         assert!(export.contains("inference_requests_total"));
         assert!(export.contains("inference_latency_ms"));
-    }
-
-    #[test]
-    fn test_legacy_metrics_tracking() {
-        let metrics = GatewayMetrics::new();
-        metrics.record_request();
-        metrics.record_latency(100.0);
-        metrics.record_completed();
-
-        assert_eq!(metrics.get_total_requests(), 1);
-        assert_eq!(metrics.get_total_completed(), 1);
-        assert_eq!(metrics.get_avg_latency_ms(), 100.0);
     }
 }
