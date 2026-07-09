@@ -99,7 +99,7 @@ impl GracefulDegradation {
     }
 
     /// Execute with graceful degradation
-    pub async fn execute_with_fallback<F, Fut, T, B, BFut>(
+    pub async fn execute_with_fallback<F, T, B>(
         &self,
         primary: F,
         fallback: B,
