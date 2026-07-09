@@ -64,9 +64,9 @@ pub fn validate_request(req: &InferenceRequest) -> Result<ValidatedRequest, Vali
             "model",
         ));
     }
-    if !req.model.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !req.model.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.') {
         return Err(ValidationError::new(
-            "model name contains invalid characters (only alphanumeric, '-' and '_' allowed)",
+            "model name contains invalid characters (alphanumeric, '-', '_', ':', '.' allowed)",
             "invalid_model_name",
             "model",
         ));
