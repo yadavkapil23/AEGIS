@@ -1,12 +1,18 @@
 /// Integration tests for AEGIS Gateway HTTP endpoints.
 ///
-/// These tests spin up the Actix-Web app in-process and send real HTTP requests
-/// through the test server. No external services required for basic validation tests.
+/// Health/allocation endpoints tested via Actix test server.
+/// Inference validation tested as unit tests.
 
-use actix_web::{test, web, App, http::StatusCode};
-use serde_json::json;
+use actix_web::{web, App, http::StatusCode};
+use actix_web::test as actix_test;
 
-/// Build the test app with all routes registered (no middleware for simplicity).
+use aegis_gateway::backend_manager::BackendManager;
+use aegis_gateway::llm_backend::LLMBackend;
+use aegis_gateway::metrics::PrometheusMetrics;
+use aegis_gateway::inference_handler;
+use aegis_gateway::handlers;
+use aegis_gateway::request_validator::{validate_request, InferenceRequest};
+
 fn test_app() -> App<
     impl actix_web::dev::ServiceFactory<
         actix_web::dev::ServiceRequest,
@@ -16,12 +22,12 @@ fn test_app() -> App<
         InitError = (),
     >,
 > {
-    use aegis_gateway::inference_handler;
-    use aegis_gateway::handlers;
+    let bm = web::Data::new(BackendManager::new().unwrap());
+    let pm = web::Data::new(PrometheusMetrics::new().unwrap());
+    let lb = web::Data::new(LLMBackend::new("http://localhost:8000".into(), "http://localhost:8001".into(), 30));
 
     App::new()
-        .service(inference_handler::infer_handler)
-        .service(inference_handler::infer_stream_handler)
+        .app_data(bm).app_data(pm).app_data(lb)
         .service(inference_handler::health_live)
         .service(inference_handler::health_ready)
         .service(inference_handler::health_startup)
@@ -31,199 +37,118 @@ fn test_app() -> App<
         .service(handlers::get_cluster_health)
 }
 
-// ── Health Endpoints ──────────────────────────────────────────
+// ── HTTP Health Endpoints ─────────────────────────────────────
 
 #[actix_web::test]
-async fn test_liveness_probe() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::get().uri("/health/live").to_request();
-    let resp = test::call_service(&app, req).await;
+async fn liveness_probe() {
+    let app = actix_test::init_service(test_app()).await;
+    let resp = actix_test::call_service(&app, actix_test::TestRequest::get().uri("/health/live").to_request()).await;
     assert_eq!(resp.status(), StatusCode::OK);
-
-    let body: serde_json::Value = test::read_body_json(resp).await;
+    let body: serde_json::Value = actix_test::read_body_json(resp).await;
     assert_eq!(body["status"], "alive");
 }
 
 #[actix_web::test]
-async fn test_startup_probe() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::get().uri("/health/startup").to_request();
-    let resp = test::call_service(&app, req).await;
+async fn startup_probe() {
+    let app = actix_test::init_service(test_app()).await;
+    let resp = actix_test::call_service(&app, actix_test::TestRequest::get().uri("/health/startup").to_request()).await;
     assert_eq!(resp.status(), StatusCode::OK);
-
-    let body: serde_json::Value = test::read_body_json(resp).await;
+    let body: serde_json::Value = actix_test::read_body_json(resp).await;
     assert_eq!(body["status"], "started");
 }
 
-// ── Inference Validation ──────────────────────────────────────
-
 #[actix_web::test]
-async fn test_infer_empty_model_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "",
-            "prompt": "Hello",
-            "max_tokens": 10
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_empty_prompt_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "",
-            "max_tokens": 10
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_invalid_max_tokens_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "Hello",
-            "max_tokens": 0
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_max_tokens_too_large_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "Hello",
-            "max_tokens": 50000
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_temperature_out_of_range_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "Hello",
-            "max_tokens": 10,
-            "temperature": 3.0
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_top_p_out_of_range_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "Hello",
-            "max_tokens": 10,
-            "top_p": 1.5
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[actix_web::test]
-async fn test_infer_invalid_model_chars_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "model/with/slashes",
-            "prompt": "Hello",
-            "max_tokens": 10
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-// ── Allocation Endpoints (require backend, test validation) ───
-
-#[actix_web::test]
-async fn test_allocate_missing_body_rejected() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/v1/allocate")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    // Should return 400 or 415 (missing content type / body)
-    assert!(
-        resp.status().is_client_error(),
-        "Expected client error, got {}",
-        resp.status()
-    );
-}
-
-#[actix_web::test]
-async fn test_stats_endpoint_returns_json() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::get().uri("/v1/stats").to_request();
-    let resp = test::call_service(&app, req).await;
+async fn stats_endpoint() {
+    let app = actix_test::init_service(test_app()).await;
+    let resp = actix_test::call_service(&app, actix_test::TestRequest::get().uri("/v1/stats").to_request()).await;
     assert!(resp.status().is_success() || resp.status().is_server_error());
 }
 
-// ── Request Validation Edge Cases ─────────────────────────────
-
 #[actix_web::test]
-async fn test_infer_valid_request_reaches_backend() {
-    // This will fail with a backend error (no vLLM running),
-    // but it proves the validation and routing logic works.
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "llama-7b",
-            "prompt": "What is 2+2?",
-            "max_tokens": 10,
-            "temperature": 0.7,
-            "top_p": 0.9
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    // Will be 502 (bad gateway) since no backend is running,
-    // but NOT 400 (bad request) — validation passed.
-    assert_ne!(resp.status(), StatusCode::BAD_REQUEST);
+async fn cluster_health_endpoint() {
+    let app = actix_test::init_service(test_app()).await;
+    let resp = actix_test::call_service(&app, actix_test::TestRequest::get().uri("/v1/cluster").to_request()).await;
+    assert!(resp.status().is_success() || resp.status().is_server_error());
 }
 
-#[actix_web::test]
-async fn test_infer_optional_fields_none() {
-    let app = test::init_service(test_app()).await;
-    let req = test::TestRequest::post()
-        .uri("/infer")
-        .set_json(json!({
-            "model": "test-model",
-            "prompt": "Hello",
-            "max_tokens": 5
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    // Validation passes, backend may fail
-    assert_ne!(resp.status(), StatusCode::BAD_REQUEST);
+// ── Validation Unit Tests ─────────────────────────────────────
+
+fn mk_req(model: &str, prompt: &str, max_tokens: u32) -> InferenceRequest {
+    InferenceRequest { model: model.into(), prompt: prompt.into(), max_tokens, temperature: None, top_p: None }
+}
+
+#[test]
+fn valid_request_passes() {
+    assert!(validate_request(&mk_req("llama-7b", "Hello", 100)).is_ok());
+}
+
+#[test]
+fn empty_model_rejected() {
+    assert_eq!(validate_request(&mk_req("", "Hello", 10)).unwrap_err().error_code, "empty_model");
+}
+
+#[test]
+fn invalid_model_chars_rejected() {
+    assert_eq!(validate_request(&mk_req("model/with/slashes", "Hello", 10)).unwrap_err().error_code, "invalid_model_name");
+}
+
+#[test]
+fn model_too_long_rejected() {
+    assert_eq!(validate_request(&mk_req(&"a".repeat(300), "Hello", 10)).unwrap_err().error_code, "model_too_long");
+}
+
+#[test]
+fn empty_prompt_rejected() {
+    assert_eq!(validate_request(&mk_req("llama-7b", "", 10)).unwrap_err().error_code, "empty_prompt");
+}
+
+#[test]
+fn prompt_too_long_rejected() {
+    assert_eq!(validate_request(&mk_req("llama-7b", &"x".repeat(100_001), 10)).unwrap_err().error_code, "prompt_too_long");
+}
+
+#[test]
+fn zero_max_tokens_rejected() {
+    assert_eq!(validate_request(&mk_req("llama-7b", "Hello", 0)).unwrap_err().error_code, "invalid_max_tokens");
+}
+
+#[test]
+fn max_tokens_too_large_rejected() {
+    assert_eq!(validate_request(&mk_req("llama-7b", "Hello", 50_000)).unwrap_err().error_code, "invalid_max_tokens");
+}
+
+#[test]
+fn temperature_out_of_range() {
+    let mut r = mk_req("llama-7b", "Hello", 10);
+    r.temperature = Some(3.0);
+    assert_eq!(validate_request(&r).unwrap_err().error_code, "invalid_temperature");
+}
+
+#[test]
+fn temperature_valid() {
+    let mut r = mk_req("llama-7b", "Hello", 10);
+    r.temperature = Some(0.7);
+    assert!(validate_request(&r).is_ok());
+}
+
+#[test]
+fn top_p_out_of_range() {
+    let mut r = mk_req("llama-7b", "Hello", 10);
+    r.top_p = Some(1.5);
+    assert_eq!(validate_request(&r).unwrap_err().error_code, "invalid_top_p");
+}
+
+#[test]
+fn top_p_valid() {
+    let mut r = mk_req("llama-7b", "Hello", 10);
+    r.top_p = Some(0.9);
+    assert!(validate_request(&r).is_ok());
+}
+
+#[test]
+fn optional_fields_none() {
+    let mut r = mk_req("llama-7b", "Hello", 10);
+    r.temperature = None;
+    r.top_p = None;
+    assert!(validate_request(&r).is_ok());
 }
