@@ -2,19 +2,17 @@
 
 **Advanced Engine for Generative Inference & Scheduling**
 
-A production-grade LLM inference gateway and orchestration system built in Rust. AEGIS provides multi-backend inference routing, distributed KV-cache management with Raft consensus, cryptographic audit trails, and enterprise security — all with zero-cost abstractions and no garbage collector pauses.
+A production-grade LLM inference gateway and orchestration system built in Rust. AEGIS provides multi-backend inference routing, distributed KV-cache management with Raft consensus, cryptographic audit trails, and enterprise security - all with zero-cost abstractions and no garbage collector pauses.
 
 ---
 
 ## What is AEGIS?
 
-AEGIS is an **infrastructure-first LLM inference engine** that sits between your applications and your models. It is not a model wrapper — it is a full orchestration layer providing:
+AEGIS is an **infrastructure-first LLM inference engine** that sits between your applications and your models. It is not a model wrapper - it is a full orchestration layer providing:
 
 - **Multi-Backend Orchestration**: Routes inference requests across Ollama (default, local), llama.cpp (optional native FFI), vLLM (optional, high-throughput self-hosted), and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
 - **Streaming Inference**: Server-Sent Events (SSE) streaming for real-time token delivery.
 - **Temperature & Top-P Sampling**: Proper softmax scaling with nucleus sampling in the native llama.cpp backend.
-- **Physical KV-Cache Management**: Allocates, evicts, and reuses LLM memory blocks with paged attention, zero-copy prefix sharing, and LRU eviction.
-- **Distributed Consensus**: Raft-inspired leader election and log replication across a 3-node scheduler cluster, with WAL persistence and state consistency validation.
 - **Cryptographic Audit Engine**: Chains every inference event into a BLAKE3 hash tree stored in PostgreSQL — mathematically tamper-proof execution logs for compliance.
 - **Enterprise Security**: JWT authentication, API key management (SHA-256 hashed), 3-tier token bucket rate limiting, TLS/mTLS support.
 - **Resilience Patterns**: Circuit breakers (Closed/Open/HalfOpen), exponential backoff retry, bulkhead concurrency control, graceful degradation.
@@ -172,7 +170,6 @@ Open **http://localhost:3000** for Grafana dashboards and **http://localhost:909
 | **Gateway HTTP Server** | ✅ Running | Boots on port 8080, endpoints registered, all middleware initialized |
 | **Request Routing** | ✅ Working | Requests validated and routed to inference backends, no dead-on-arrival errors |
 | **inference-backends Router** | ✅ Tested | 8/8 integration tests pass (router logic, Ollama fallback, health checks) |
-| **aegis-scheduler Tests** | ❌ Pre-existing Bug | Test suite fails to compile (private field access, argument mismatch in `consensus_allocator.rs` tests — unrelated to this work) |
 
 **What Works Now:**
 - Full system boots together (gateway + Postgres + Ollama + infrastructure)
@@ -211,12 +208,6 @@ Client Application
         |         +---> vLLM (optional, high-throughput self-hosted, OpenAI-compatible API)
         |         +---> HuggingFace (cloud fallback)
         |
-        +---> KV-Cache Scheduler (gRPC, 3-node cluster)
-        |         |
-        |         +---> Raft Consensus (leader election, log replication)
-        |         +---> Block Allocator (paged attention, LRU eviction)
-        |         +---> WAL Persistence (crash recovery)
-        |
         +---> Audit Engine (BLAKE3 hash chain, append-only)
         |
         +---> PostgreSQL (API keys, inference logs, audit trail)
@@ -230,8 +221,6 @@ Client Application
 
 ```
 gateway/              API Gateway (Actix-Web, main binary)
-scheduler/            Distributed KV-Cache Scheduler (gRPC, Raft consensus)
-consensus/            Consensus engine with peer communication (gRPC client)
 inference-backends/   Backend abstractions (Ollama, llama.cpp [optional], HuggingFace)
 security/             JWT, API keys, rate limiting, TLS
 resilience/           Circuit breaker, retry, timeout, degradation
@@ -239,8 +228,7 @@ audit/                BLAKE3 hash chain audit engine
 safety/               Policy engine (Allow/Deny/Fallback)
 observability/        Prometheus metrics, health probes, tracing
 telemetry/            OpenTelemetry integration, OTLP export
-proto/                Shared protobuf definitions (inference, scheduling, audit)
-runtime/              Top-level orchestrator (wires all subsystems)
+proto/                Shared protobuf definitions (inference, audit)
 benchmarks/           Criterion benchmarks
 ```
 
@@ -252,10 +240,6 @@ benchmarks/           Criterion benchmarks
 |--------|------|-------------|
 | POST | `/infer` | Run LLM inference (synchronous, requires auth) |
 | POST | `/infer/stream` | Run LLM inference (SSE streaming, token-by-token) |
-| POST | `/v1/allocate` | Allocate KV-cache blocks via scheduler |
-| POST | `/v1/deallocate` | Release KV-cache blocks |
-| GET | `/v1/stats` | Cache statistics |
-| GET | `/v1/cluster` | Cluster health |
 | GET | `/health` | Deep health check (all subsystems) |
 | GET | `/ready` | Readiness probe |
 | GET | `/health/live` | Liveness probe |
