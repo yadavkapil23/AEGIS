@@ -177,7 +177,7 @@ Abstraction layer for multiple AI inference engines.
 
 | Component | Purpose |
 |-----------|---------|
-| `circuit_breaker.rs` | Three-state breaker (Closed→Open→HalfOpen) with configurable thresholds and timeout recovery |
+| `circuit_breaker.rs` | Three-state breaker (Closed→Open→HalfOpen) with percentage-based failure threshold and timeout recovery |
 | `retry.rs` | Exponential backoff with jitter via `tokio::time::sleep` |
 | `timeout.rs` | Generic timeout wrapper around any `Future` |
 | `graceful_degradation.rs` | Degradation levels with primary/fallback execution paths |
@@ -234,9 +234,9 @@ Abstraction layer for multiple AI inference engines.
     └─────────────────────────────────────┘
 ```
 
-- **Closed**: Normal operation. Failures counted. Opens when failure rate exceeds threshold.
+- **Closed**: Normal operation. Failures evaluated against percentage threshold on every failure. Opens when failure rate exceeds threshold.
 - **Open**: All requests rejected. Timer starts. After timeout, transitions to HalfOpen.
-- **HalfOpen**: One test request allowed. Success → Closed. Failure → Open.
+- **HalfOpen**: One test request allowed. Success → Closed (after success_threshold met). Failure → Open.
 
 ### 4.2 KV-Cache Allocation
 
@@ -411,7 +411,7 @@ All configuration is via environment variables:
 
 ```
 vLLM fails → circuit breaker records failure
-  → if failures >= 5: circuit opens (rejects requests)
+  → if failure rate > 50% (configurable): circuit opens (rejects requests)
   → try llama.cpp
     → if fails: try Ollama
       → if fails: try HuggingFace
@@ -459,12 +459,16 @@ Token bucket algorithm with lazy per-identity limiters stored in `DashMap`.
 
 | Test Type | Location | Count | What It Covers |
 |-----------|----------|-------|----------------|
-| Integration | `gateway/tests/http_endpoint_tests.rs` | 17 | HTTP health endpoints, request validation |
-| Unit | Various `#[cfg(test)]` modules | 50+ | Allocator, circuit breaker, audit trail, consensus |
+| Unit (resilience) | `resilience/src/` | 8 | Circuit breaker state transitions, retry logic, timeout, graceful degradation |
+| Unit (observability) | `observability/src/` | 10 | Metrics registry, health manager, tracing config, error types |
+| Integration | `gateway/tests/` | 17+ | HTTP endpoints, request validation, contract tests, chaos tests |
+| Unit (other) | Various `#[cfg(test)]` modules | 20+ | Allocator, audit trail, consensus, scheduler |
 | Benchmarks | `benchmarks/benches/` | 3 | Allocation throughput, audit latency, e2e inference |
 
 ```bash
 cargo test --workspace                    # All tests
+cargo test -p resilience                  # Resilience tests
+cargo test -p observability               # Observability tests
 cargo test -p aegis-gateway --test http_endpoint_tests  # Gateway integration
 cargo bench -p aegis-benchmarks           # Performance benchmarks
 ```
