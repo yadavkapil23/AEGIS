@@ -3,6 +3,7 @@
 pub mod log;
 pub mod state;
 pub mod peer_client;
+pub mod server;
 
 pub use log::ReplicatedLog;
 pub use state::ExecutionState;
@@ -229,6 +230,34 @@ impl ConsensusEngine {
             let _ = self.log.append(entry);
         }
 
+        true
+    }
+
+    /// Handle receiving an InstallSnapshot from the leader.
+    pub fn handle_install_snapshot(
+        &self,
+        leader_id: &str,
+        leader_term: u64,
+        _last_included_index: u64,
+        _last_included_term: u64,
+        _data: Vec<u8>,
+    ) -> bool {
+        let current_term = self.current_term.load(Ordering::SeqCst);
+
+        if leader_term < current_term {
+            return false;
+        }
+
+        if leader_term > current_term {
+            self.current_term.store(leader_term, Ordering::SeqCst);
+        }
+
+        *self.role.write() = NodeRole::Follower;
+        *self.leader_id.write() = Some(leader_id.to_string());
+        *self.voted_for.write() = None;
+        *self.last_heartbeat.write() = Instant::now();
+
+        info!("Snapshot installed from leader {}", leader_id);
         true
     }
 
