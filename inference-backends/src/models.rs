@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 pub enum BackendPreference {
     /// Always use Hugging Face API
     HuggingFace,
-    /// Always use vLLM cluster
-    VLLm,
+    /// Always use Ollama cluster
+    Ollama,
     /// Let router decide based on heuristics
     #[default]
     Auto,
@@ -159,5 +159,5 @@ pub struct InferenceStats {
     pub avg_latency_ms: f32,
     pub p99_latency_ms: f32,
     pub hf_requests: u64,
-    pub vllm_requests: u64,
+    pub ollama_requests: u64,
 }
