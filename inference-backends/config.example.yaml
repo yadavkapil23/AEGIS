@@ -1,13 +1,13 @@
 # Complete Inference Backends Configuration
-# Supports 3 backends: HuggingFace API, vLLM, and llama.cpp
+# Supports 3 backends: HuggingFace API, Ollama, and llama.cpp
 
-# Default backend preference: "auto", "huggingface", "vllm", or "llamacpp"
+# Default backend preference: "auto", "huggingface", or "ollama"
 default_preference: auto
 
 # Fallback order when backends fail
-# Try vLLM first (fast), then llama.cpp (local), then HF API (reliable)
+# Try Ollama first (fast, local), then llama.cpp (local), then HF API (reliable)
 fallback_order:
-  - vllm
+  - ollama
   - llamacpp
   - huggingface
 
@@ -31,9 +31,7 @@ huggingface:
   endpoint: https://api-inference.huggingface.co
   # Models to support
   models:
-    - mistralai/Mistral-7B-Instruct-v0.2
-    - meta-llama/Llama-2-7b-hf
-    - NousResearch/Nous-Hermes-2-Mixtral-8x7B
+    - Qwen/Qwen2.5-0.5B-Instruct
   # Request timeout
   timeout_ms: 30000
   # Max concurrent requests
@@ -44,25 +42,22 @@ huggingface:
   cache_ttl_secs: 3600
 
 # ============================================================================
-# 2. VLLM CLUSTER (Self-hosted, Distributed, Fast)
+# 2. OLLAMA CLUSTER (Self-hosted, Distributed, Fast)
 # ============================================================================
-vllm:
+ollama:
   enabled: true
-  # vLLM endpoint URLs (can be multiple nodes)
+  # Ollama endpoint URLs (can be multiple nodes)
   endpoints:
-    - http://vllm-node-1:8000
-    - http://vllm-node-2:8000
-    - http://vllm-node-3:8000
+    - http://localhost:11434
   # Models to support
   models:
-    - mistralai/Mistral-7B-Instruct-v0.2
-    - meta-llama/Llama-2-7b-hf
+    - qwen2.5:0.5b
   # Request timeout
   timeout_ms: 30000
   # Max concurrent requests per endpoint
   max_concurrent_requests: 1000
   # Load balancing: "round_robin", "least_loaded", or "random"
-  load_balancing: least_loaded
+  load_balancing: round_robin
   # Enable connection pooling
   enable_connection_pooling: true
   # Connection pool size per endpoint
@@ -77,9 +72,7 @@ llamacpp:
   endpoint: http://localhost:8080
   # Models to support (use model names/paths)
   models:
-    - mistral-7b
-    - llama2-7b
-    - neural-chat
+    - qwen2.5-0.5b
   # Request timeout
   timeout_ms: 30000
   # Max concurrent requests
