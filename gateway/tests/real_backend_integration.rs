@@ -1,5 +1,5 @@
 /// Real Backend Integration Tests
-/// Tests actual LLM inference with vLLM and llama.cpp
+/// Tests actual LLM inference with Ollama and llama.cpp
 /// These tests require real backends to be running
 
 mod integration_test_harness;
@@ -8,27 +8,27 @@ use integration_test_harness::*;
 use std::sync::Arc;
 use anyhow::Result;
 
-/// Test with vLLM backend (requires: docker-compose up vllm)
+/// Test with Ollama backend (requires: docker-compose up ollama)
 #[tokio::test]
 #[ignore]  // Run with: cargo test --test real_backend_integration -- --ignored --nocapture
-async fn test_vllm_real_inference() -> Result<()> {
-    println!("\n🔴 TEST: Real vLLM Inference");
-    println!("Requires: docker-compose up vllm");
+async fn test_ollama_real_inference() -> Result<()> {
+    println!("\n🔴 TEST: Real Ollama Inference");
+    println!("Requires: docker-compose up ollama");
     println!("Endpoint: http://localhost:8000");
 
     let env = TestEnvironment::start().await?;
     let env = Arc::new(env);
     let executor = ScenarioExecutor::new(env.clone());
 
-    // Create request for vLLM
+    // Create request for Ollama
     let req = AllocationRequest {
-        request_id: "vllm-test-001".to_string(),
+        request_id: "ollama-test-001".to_string(),
         num_blocks: 4,
-        model: Some("meta-llama/Llama-2-7b-hf".to_string()),
+        model: Some("qwen2.5:0.5b".to_string()),
         priority: Some(5),
     };
 
-    // Try to allocate (may fail if vLLM not running)
+    // Try to allocate (may fail if Ollama not running)
     match executor.allocate(req.clone()).await {
         Ok(resp) => {
             println!("✅ Allocation successful");
@@ -39,7 +39,7 @@ async fn test_vllm_real_inference() -> Result<()> {
         }
         Err(e) => {
             println!("❌ Allocation failed: {}", e);
-            println!("Make sure vLLM is running: docker-compose up vllm");
+            println!("Make sure Ollama is running: docker-compose up ollama");
             return Ok(()); // Don't fail test if backend not running
         }
     }
@@ -64,7 +64,7 @@ async fn test_llamacpp_real_inference() -> Result<()> {
     let req = AllocationRequest {
         request_id: "llamacpp-test-001".to_string(),
         num_blocks: 4,
-        model: Some("mistral-7b".to_string()),
+        model: Some("qwen2.5-0.5b".to_string()),
         priority: Some(5),
     };
 
@@ -88,12 +88,12 @@ async fn test_llamacpp_real_inference() -> Result<()> {
     Ok(())
 }
 
-/// Test fallback from vLLM to llama.cpp
+/// Test fallback from Ollama to llama.cpp
 #[tokio::test]
 #[ignore]
 async fn test_backend_fallback() -> Result<()> {
     println!("\n🟢 TEST: Backend Failover/Fallback");
-    println!("When vLLM fails, should fallback to llama.cpp");
+    println!("When Ollama fails, should fallback to llama.cpp");
 
     let env = TestEnvironment::start().await?;
     let env = Arc::new(env);
@@ -101,8 +101,8 @@ async fn test_backend_fallback() -> Result<()> {
 
     // Try different models to test fallback
     let models = vec![
-        ("meta-llama/Llama-2-7b-hf", "vLLM model"),
-        ("mistral-7b", "llama.cpp model"),
+        ("qwen2.5:0.5b", "Ollama model"),
+        ("qwen2.5-0.5b", "llama.cpp model"),
     ];
 
     for (model, desc) in models {
@@ -145,7 +145,7 @@ async fn test_full_inference_pipeline() -> Result<()> {
     let alloc_req = AllocationRequest {
         request_id: "full-pipeline-001".to_string(),
         num_blocks: 4,
-        model: Some("meta-llama/Llama-2-7b-hf".to_string()),
+        model: Some("qwen2.5:0.5b".to_string()),
         priority: Some(5),
     };
 
@@ -157,7 +157,7 @@ async fn test_full_inference_pipeline() -> Result<()> {
         }
         Err(e) => {
             println!("❌ Allocation failed: {}", e);
-            println!("Ensure vLLM is running on http://localhost:8000");
+            println!("Ensure Ollama is running on http://localhost:8000");
             return Ok(());
         }
     };
@@ -167,7 +167,7 @@ async fn test_full_inference_pipeline() -> Result<()> {
     // Step 2: Run inference
     let infer_req = InferenceRequest {
         request_id: "full-pipeline-001".to_string(),
-        model: "meta-llama/Llama-2-7b-hf".to_string(),
+        model: "qwen2.5:0.5b".to_string(),
         prompt: "What is artificial intelligence? Explain in one sentence.".to_string(),
         max_tokens: 50,
     };
@@ -229,7 +229,7 @@ async fn test_real_backend_performance() -> Result<()> {
 
         let infer_req = InferenceRequest {
             request_id: format!("perf-test-{}", i),
-            model: "meta-llama/Llama-2-7b-hf".to_string(),
+            model: "qwen2.5:0.5b".to_string(),
             prompt: format!("Question {}?", i),
             max_tokens: 20,
         };
