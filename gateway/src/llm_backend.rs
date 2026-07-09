@@ -854,14 +854,37 @@ impl LLMBackend {
 
     /// Check if HuggingFace API is accessible
     pub async fn check_hf_health(&self) -> bool {
-        // HF API health check just verifies we have an API key
-        // (can't really health-check the endpoint without making a request)
-        if self.hf_api_key.is_some() {
-            info!("HuggingFace API health check: OK (API key configured)");
-            true
-        } else {
-            debug!("HuggingFace API not configured (no API key)");
-            false
+        let api_key = match &self.hf_api_key {
+            Some(key) => key.clone(),
+            None => {
+                debug!("HuggingFace API not configured (no API key)");
+                return false;
+            }
+        };
+
+        // Ping the HuggingFace models endpoint
+        let url = format!("{}/models", self.hf_api_endpoint);
+        match self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let healthy = resp.status().is_success() || resp.status().as_u16() == 404;
+                // 404 is acceptable — it means the endpoint is reachable but no default model
+                if healthy {
+                    info!("HuggingFace API health check: OK");
+                } else {
+                    warn!("HuggingFace API health check failed: {}", resp.status());
+                }
+                healthy
+            }
+            Err(e) => {
+                warn!("HuggingFace API health check error: {}", e);
+                false
+            }
         }
     }
 
