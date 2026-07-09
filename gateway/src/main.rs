@@ -2,6 +2,7 @@
 /// Real backends (vLLM, llama.cpp) with metrics, tracing, JWT auth, rate limiting
 
 use actix_web::{web, App, HttpServer, middleware as actix_mw};
+use actix_cors::Cors;
 use std::sync::Arc;
 use tracing::info;
 
@@ -18,11 +19,9 @@ mod jwt_auth;
 mod security_middleware;
 mod request_validator;
 mod request_queue;
-mod db_migrations;
-mod backup;
 mod middleware;
-mod service;
 mod database;
+mod llm_backend;
 
 use allocation_client::AllocationClient;
 use config::GatewayConfig;
@@ -33,8 +32,6 @@ use jwt_auth::{ApiKeyValidator, JwtAuthMiddleware};
 use security_middleware::{RateLimitMiddleware, SecurityHeadersMiddleware, RequestIdMiddleware};
 use middleware::GatewayState;
 use request_queue::RequestQueue;
-
-mod llm_backend;
 use llm_backend::LLMBackend;
 
 #[actix_web::main]
@@ -78,14 +75,9 @@ async fn main() -> std::io::Result<()> {
     );
 
     // ── LLM backend (vLLM + llama.cpp + Ollama + HuggingFace)
-    let vllm_endpoint = std::env::var("VLLM_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:8000".into());
-    let llamacpp_endpoint = std::env::var("LLAMACPP_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:8001".into());
-
     let llm_backend = Arc::new(LLMBackend::new(
-        vllm_endpoint.clone(),
-        llamacpp_endpoint.clone(),
+        config.vllm_endpoint.clone(),
+        config.llamacpp_endpoint.clone(),
         config.request_timeout_secs,
     ));
 
@@ -97,9 +89,13 @@ async fn main() -> std::io::Result<()> {
         .split(',')
         .map(|s| s.trim().to_string())
         .collect();
-    let api_key_validator = web::Data::new(ApiKeyValidator::new(jwt_secret, fallback_keys));
+    let api_key_validator = web::Data::new(ApiKeyValidator::new(
+        jwt_secret,
+        fallback_keys,
+        Some(db_pool.clone()),
+    ));
 
-    // ── Build shared GatewayState ──────────────────────────
+    // ── Build shared GatewayState (single source of truth) ─
     let gw_state = web::Data::new(GatewayState::new(
         allocation_client,
         request_cache,
@@ -111,10 +107,6 @@ async fn main() -> std::io::Result<()> {
         request_queue,
     ));
 
-    let pm = web::Data::new(PrometheusMetrics::new().expect("metrics"));
-    let bm = web::Data::new(BackendManager::new().expect("backend mgr"));
-    let lb = web::Data::new(llm_backend);
-
     info!(
         "Starting AEGIS Gateway on http://{}:{}",
         config.host, config.port
@@ -122,40 +114,49 @@ async fn main() -> std::io::Result<()> {
     info!("Endpoints:");
     info!("  POST   /infer              - LLM inference");
     info!("  POST   /infer/stream       - LLM inference (streaming SSE)");
+    info!("  POST   /v1/chat/completions - OpenAI-compatible chat completions");
     info!("  POST   /v1/allocate        - KV-cache allocation");
     info!("  POST   /v1/deallocate      - KV-cache deallocation");
     info!("  GET    /v1/stats            - Cache statistics");
     info!("  GET    /v1/cluster          - Cluster health");
     info!("  GET    /health              - Deep health check");
     info!("  GET    /ready               - Readiness probe");
+    info!("  GET    /metrics             - Prometheus metrics");
     info!("  POST   /api/keys            - Create API key");
     info!("  GET    /api/keys            - List API keys");
     info!("  DELETE /api/keys/{{key}}      - Revoke API key");
 
     // ── Start HTTP server ──────────────────────────────────
+    let rate_limit = config.rate_limit_rps;
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+
         App::new()
             .app_data(gw_state.clone())
-            .app_data(pm.clone())
-            .app_data(bm.clone())
             .app_data(api_key_validator.clone())
-            .app_data(lb.clone())
-            // Middleware (order matters)
+            // CORS (outermost)
+            .wrap(cors)
+            // Middleware (order matters - outermost first)
             .wrap(RequestIdMiddleware)
             .wrap(actix_mw::Logger::default())
             .wrap(SecurityHeadersMiddleware)
-            .wrap(RateLimitMiddleware::new(config.rate_limit_rps * 60 / 1000))
+            .wrap(RateLimitMiddleware::new(rate_limit))
             .wrap(JwtAuthMiddleware::new(api_key_validator.get_ref().clone()))
             .wrap(actix_mw::NormalizePath::trim())
             // Inference endpoints
             .service(inference_handler::infer_handler)
             .service(inference_handler::infer_stream_handler)
+            .service(inference_handler::chat_completions_handler)
             .service(inference_handler::health_live)
             .service(inference_handler::health_ready)
             .service(inference_handler::health_startup)
             .service(inference_handler::metrics_handler)
             .service(inference_handler::backends_status)
-            // Allocation endpoints (real handlers)
+            // Allocation endpoints
             .service(handlers::health_check)
             .service(handlers::readiness_check)
             .service(handlers::allocate)
