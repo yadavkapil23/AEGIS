@@ -4,8 +4,6 @@
 
 A production-grade LLM inference gateway and orchestration system built in Rust. AEGIS provides multi-backend inference routing, distributed KV-cache management with Raft consensus, cryptographic audit trails, and enterprise security — all with zero-cost abstractions and no garbage collector pauses.
 
-**Status: v3.0.0 — Workspace compiles with zero errors (default features; native llama.cpp FFI is opt-in via `native-llama`). `inference-backends` router/Ollama integration verified with 8 passing integration tests. A full live end-to-end run (gateway + Postgres + real Ollama model) has not yet been completed in this environment due to local disk space constraints — see Verification Status below.**
-
 ---
 
 ## What is AEGIS?
