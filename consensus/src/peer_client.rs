@@ -13,6 +13,7 @@ pub mod proto {
 use proto::{
     consensus_service_client::ConsensusServiceClient,
     RequestVoteRequest, AppendEntriesRequest, LogEntry as ProtoLogEntry,
+    InstallSnapshotRequest,
 };
 
 /// Connection to a single peer node.
@@ -148,6 +149,50 @@ impl PeerClient {
             Err(e) => {
                 peer.healthy = false;
                 error!(peer = peer_id, error = %e, "AppendEntries RPC failed");
+                Err(anyhow::anyhow!("RPC error: {}", e))
+            }
+        }
+    }
+
+    /// Send InstallSnapshot RPC to a specific peer.
+    pub async fn install_snapshot(
+        &self,
+        peer_id: &str,
+        leader_id: &str,
+        term: u64,
+        last_included_index: u64,
+        last_included_term: u64,
+        data: Vec<u8>,
+    ) -> Result<u64> {
+        let mut peers = self.peers.write();
+        let peer = peers.get_mut(peer_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown peer: {}", peer_id))?;
+
+        if !peer.healthy {
+            return Err(anyhow::anyhow!("Peer {} is marked unhealthy", peer_id));
+        }
+
+        let req = InstallSnapshotRequest {
+            leader_id: leader_id.to_string(),
+            term,
+            last_included_index,
+            last_included_term,
+            data,
+        };
+
+        match peer.client.install_snapshot(req).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                debug!(
+                    peer = peer_id,
+                    term = r.term,
+                    "InstallSnapshot response"
+                );
+                Ok(r.term)
+            }
+            Err(e) => {
+                peer.healthy = false;
+                error!(peer = peer_id, error = %e, "InstallSnapshot RPC failed");
                 Err(anyhow::anyhow!("RPC error: {}", e))
             }
         }
