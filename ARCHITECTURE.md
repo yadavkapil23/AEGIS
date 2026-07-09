@@ -155,10 +155,10 @@ Abstraction layer for multiple AI inference engines.
 |-----------|---------|
 | `traits.rs` | `InferenceBackend` async trait: `infer()`, `health_check()`, `supports_model()`, `get_models()` |
 | `router.rs` | `BackendRouter` — health-aware fallback routing with preference selection |
-| `vllm.rs` | vLLM client with round-robin, least-loaded, and random endpoint selection |
+| `ollama.rs` | Ollama HTTP client with round-robin, least-loaded, and random endpoint selection |
 | `llamacpp.rs` | llama.cpp HTTP backend implementing `InferenceBackend` trait |
-| `llama_cpp_safe.rs` | Safe Rust FFI wrapper: `Model`, `Context`, `Session` with temperature/top_p sampling |
-| `llama_cpp_sys.rs` | Raw unsafe FFI bindings to llama.cpp C library |
+| `llama_cpp_safe.rs` | Safe Rust FFI wrapper: `Model`, `Context`, `Session` with temperature/top_p sampling. Gated behind the `native-llama` Cargo feature (off by default); a no-op stub `Session` is compiled in its place otherwise so dependents like `scheduler` still build without the FFI toolchain. |
+| `llama_cpp_sys.rs` | Raw unsafe FFI bindings to llama.cpp C library. Also behind `native-llama`. |
 | `huggingface.rs` | HuggingFace Inference API backend |
 | `production_manager.rs` | `CircuitBreaker`, `RateLimiter`, `Bulkhead`, retry with exponential backoff |
 | `mock.rs` | Mock backend for testing (generates fake tokens from word list) |
