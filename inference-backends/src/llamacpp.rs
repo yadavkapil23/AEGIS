@@ -49,8 +49,7 @@ impl Default for LlamaCppConfig {
             enabled: false,
             endpoint: "http://localhost:8080".to_string(),
             models: vec![
-                "mistral-7b".to_string(),
-                "llama2-7b".to_string(),
+                "qwen2.5-0.5b".to_string(),
             ],
             timeout_ms: 30000,
             max_concurrent_requests: 50,
