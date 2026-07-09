@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn test_tracing_config_defaults() {
         let config = TracingConfig::default();
-        assert_eq!(config.log_level, "info");
-        assert!(!config.json_format);
+        assert_eq!(config.level, "info");
+        assert!(config.json_format);
     }
 }
