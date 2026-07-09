@@ -119,7 +119,7 @@ async fn test_allocation_contract() -> Result<()> {
     let valid_req = TestRequestBuilder::new()
         .request_id("test-123".to_string())
         .num_blocks(4)
-        .model("llama-7b".to_string())
+        .model("qwen2.5:0.5b".to_string())
         .priority(5)
         .build();
 
@@ -172,7 +172,7 @@ async fn test_inference_contract() -> Result<()> {
     // Valid request
     let valid_req = InferenceRequest {
         request_id: "infer-001".to_string(),
-        model: "llama-7b".to_string(),
+        model: "qwen2.5:0.5b".to_string(),
         prompt: "What is AI?".to_string(),
         max_tokens: 100,
     };
