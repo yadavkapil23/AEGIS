@@ -36,7 +36,7 @@ impl ChaosExecutor {
     /// Simulate random failures
     pub async fn with_random_failures<F>(&self, failure_rate: f32, duration_secs: u32, mut test: F) -> Result<()>
     where
-        F: FnMut() -> futures::future::BoxFuture<'static, Result<()>>,
+        F: FnMut() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'static>>,
     {
         let start = std::time::Instant::now();
 
