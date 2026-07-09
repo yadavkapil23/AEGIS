@@ -2,8 +2,8 @@
 //!
 //! Provides abstraction layer for multiple inference backends:
 //! - Hugging Face Inference API (cloud-based)
-//! - vLLM (self-hosted distributed)
-//! - llama.cpp (lightweight local)
+//! - Ollama (self-hosted, e.g. Qwen2.5-0.5B)
+//! - llama.cpp (lightweight local, native FFI behind the `native-llama` feature)
 //! - Mock Backend (testing only - generates fake tokens)
 //!
 //! Features automatic routing, fallback, and health checking
@@ -18,8 +18,26 @@ pub mod production_manager;
 pub mod router;
 pub mod traits;
 pub mod ollama;
+
+#[cfg(feature = "native-llama")]
 pub mod llama_cpp_sys;
+#[cfg(feature = "native-llama")]
 pub mod llama_cpp_safe;
+#[cfg(not(feature = "native-llama"))]
+pub mod llama_cpp_safe {
+    //! Stub present when the `native-llama` feature is disabled (the default).
+    //! Keeps `Session`'s type name and KV-cache hooks available to dependents
+    //! (e.g. `scheduler`) that hold an opaque handle to it, without requiring
+    //! the llama.cpp FFI toolchain to be built/linked.
+    pub struct Session {
+        _private: (),
+    }
+
+    impl Session {
+        /// No-op: no native session is bound without the `native-llama` feature.
+        pub fn kv_cache_rm(&self, _seq_id: i32, _p0: i32, _p1: i32) {}
+    }
+}
 
 pub use config::BackendConfig;
 pub use error::{BackendError, Result};

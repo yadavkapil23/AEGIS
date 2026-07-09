@@ -144,9 +144,7 @@ impl Default for HuggingFaceConfig {
             api_key: std::env::var("HF_API_KEY").ok(),
             endpoint: "https://api-inference.huggingface.co".to_string(),
             models: vec![
-                "mistralai/Mistral-7B-Instruct-v0.2".to_string(),
-                "meta-llama/Llama-2-7b-hf".to_string(),
-                "NousResearch/Nous-Hermes-2-Mixtral-8x7B".to_string(),
+                "Qwen/Qwen2.5-0.5B-Instruct".to_string(),
             ],
             timeout_ms: 30000,
             max_concurrent_requests: 100,
