@@ -86,6 +86,15 @@ impl BackendManager {
 
     // ── Circuit breaker ─────────────────────────────────────
 
+    /// Check if the circuit breaker allows requests. Returns Err if open.
+    pub fn check_circuit_breaker(&self) -> Result<(), String> {
+        if self.is_available() {
+            Ok(())
+        } else {
+            Err("Circuit breaker is open".to_string())
+        }
+    }
+
     /// Whether the backend is available for requests.
     pub fn is_available(&self) -> bool {
         let state = *self.circuit_state.lock();
