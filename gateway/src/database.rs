@@ -369,7 +369,7 @@ mod tests {
     fn test_inference_log() {
         let log = InferenceLog {
             id: Uuid::new_v4(),
-            model: "llama-7b".to_string(),
+            model: "qwen2.5:0.5b".to_string(),
             prompt_hash: Some("hash".to_string()),
             request_size: Some(100),
             response_size: Some(200),
@@ -381,7 +381,7 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        assert_eq!(log.model, "llama-7b");
+        assert_eq!(log.model, "qwen2.5:0.5b");
         assert_eq!(log.status, "success");
         assert_eq!(log.latency_ms, 1000);
     }
