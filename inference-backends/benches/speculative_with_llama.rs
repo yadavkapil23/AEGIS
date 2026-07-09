@@ -11,7 +11,7 @@ fn benchmark_speculative_with_llama(c: &mut Criterion) {
     // Real benchmarks require actual GGUF model files
     //
     // To run with real model:
-    // 1. Download model: wget https://huggingface.co/models/meta-llama/Llama-2-7b-gguf/resolve/main/llama-2-7b.Q4_K_M.gguf
+    // 1. Download model: wget https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
     // 2. Place in ./models/ directory
     // 3. Set INFERENCE_BACKEND=llama-cpp env var
     // 4. Run: cargo bench --bench speculative_with_llama
@@ -19,7 +19,7 @@ fn benchmark_speculative_with_llama(c: &mut Criterion) {
     c.bench_function("draft_generation_5_tokens", |b| {
         b.to_async(&rt).iter(|| async {
             let config = BackendConfig {
-                model_path: "models/llama-7b.gguf".to_string(),
+                model_path: "models/qwen2.5-0.5b.gguf".to_string(),
                 context_size: 4096,
                 batch_size: 32,
                 num_gpu_layers: 0,
@@ -43,7 +43,7 @@ fn benchmark_speculative_with_llama(c: &mut Criterion) {
     c.bench_function("draft_generation_10_tokens", |b| {
         b.to_async(&rt).iter(|| async {
             let config = BackendConfig {
-                model_path: "models/llama-7b.gguf".to_string(),
+                model_path: "models/qwen2.5-0.5b.gguf".to_string(),
                 context_size: 4096,
                 batch_size: 32,
                 num_gpu_layers: 0,
