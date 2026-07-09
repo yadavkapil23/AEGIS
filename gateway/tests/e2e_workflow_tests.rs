@@ -18,7 +18,7 @@ async fn test_single_inference_workflow() -> Result<()> {
     let alloc_req = TestRequestBuilder::new()
         .request_id("test-001".to_string())
         .num_blocks(4)
-        .model("llama-7b".to_string())
+        .model("qwen2.5:0.5b".to_string())
         .priority(5)
         .build();
 
@@ -33,7 +33,7 @@ async fn test_single_inference_workflow() -> Result<()> {
     // 3. Run inference with allocated blocks
     let infer_req = InferenceRequest {
         request_id: "test-001".to_string(),
-        model: "llama-7b".to_string(),
+        model: "qwen2.5:0.5b".to_string(),
         prompt: "What is AI?".to_string(),
         max_tokens: 100,
     };
@@ -77,7 +77,7 @@ async fn test_concurrent_inference_requests() -> Result<()> {
 
             let infer_req = InferenceRequest {
                 request_id: format!("concurrent-{}", i),
-                model: "llama-7b".to_string(),
+                model: "qwen2.5:0.5b".to_string(),
                 prompt: format!("Question {}", i),
                 max_tokens: 50,
             };
@@ -108,14 +108,14 @@ async fn test_cache_hit_scenario() -> Result<()> {
     // Request 1: Cache miss
     let req1 = TestRequestBuilder::new()
         .request_id("cache-test-1".to_string())
-        .model("llama-7b".to_string())
+        .model("qwen2.5:0.5b".to_string())
         .build();
 
     let alloc1 = executor.allocate(req1).await?;
     let infer1 = executor
         .infer(InferenceRequest {
             request_id: "cache-test-1".to_string(),
-            model: "llama-7b".to_string(),
+            model: "qwen2.5:0.5b".to_string(),
             prompt: "What is AI?".to_string(),
             max_tokens: 100,
         })
@@ -126,14 +126,14 @@ async fn test_cache_hit_scenario() -> Result<()> {
     // Request 2: Same model, might hit cache
     let req2 = TestRequestBuilder::new()
         .request_id("cache-test-2".to_string())
-        .model("llama-7b".to_string())
+        .model("qwen2.5:0.5b".to_string())
         .build();
 
     let alloc2 = executor.allocate(req2).await?;
     let infer2 = executor
         .infer(InferenceRequest {
             request_id: "cache-test-2".to_string(),
-            model: "llama-7b".to_string(),
+            model: "qwen2.5:0.5b".to_string(),
             prompt: "What is AI?".to_string(),
             max_tokens: 100,
         })
