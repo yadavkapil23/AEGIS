@@ -14,6 +14,10 @@ pub struct GatewayConfig {
     pub port: u16,
     /// Scheduler nodes (gRPC endpoints)
     pub scheduler_nodes: Vec<String>,
+    /// vLLM endpoint
+    pub vllm_endpoint: String,
+    /// llama.cpp endpoint
+    pub llamacpp_endpoint: String,
     /// Request cache size
     pub cache_size: usize,
     /// Request timeout in seconds
@@ -47,7 +51,8 @@ impl GatewayConfig {
         }
 
         // vLLM configuration (PRIMARY backend)
-        let vllm_endpoint = env::var("VLLM_ENDPOINTS")
+        let vllm_endpoint = env::var("VLLM_ENDPOINT")
+            .or_else(|_| env::var("VLLM_ENDPOINTS"))
             .unwrap_or_else(|_| "http://localhost:8000".to_string());
         info!("vLLM Endpoint: {}", vllm_endpoint);
 
@@ -67,6 +72,8 @@ impl GatewayConfig {
                 .split(',')
                 .map(|s| s.to_string())
                 .collect(),
+            vllm_endpoint,
+            llamacpp_endpoint,
             cache_size: env::var("GATEWAY_CACHE_SIZE")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -93,6 +100,8 @@ impl GatewayConfig {
             host: "0.0.0.0".to_string(),
             port: 8080,
             scheduler_nodes: vec!["http://localhost:50052".to_string()],
+            vllm_endpoint: "http://localhost:8000".to_string(),
+            llamacpp_endpoint: "http://localhost:8001".to_string(),
             cache_size: 1000,
             request_timeout_secs: 30,
             log_level: "info".to_string(),
