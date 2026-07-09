@@ -79,7 +79,7 @@ fn mk_req(model: &str, prompt: &str, max_tokens: u32) -> InferenceRequest {
 
 #[test]
 fn valid_request_passes() {
-    assert!(validate_request(&mk_req("llama-7b", "Hello", 100)).is_ok());
+    assert!(validate_request(&mk_req("qwen2.5:0.5b", "Hello", 100)).is_ok());
 }
 
 #[test]
@@ -99,55 +99,55 @@ fn model_too_long_rejected() {
 
 #[test]
 fn empty_prompt_rejected() {
-    assert_eq!(validate_request(&mk_req("llama-7b", "", 10)).unwrap_err().error_code, "empty_prompt");
+    assert_eq!(validate_request(&mk_req("qwen2.5:0.5b", "", 10)).unwrap_err().error_code, "empty_prompt");
 }
 
 #[test]
 fn prompt_too_long_rejected() {
-    assert_eq!(validate_request(&mk_req("llama-7b", &"x".repeat(100_001), 10)).unwrap_err().error_code, "prompt_too_long");
+    assert_eq!(validate_request(&mk_req("qwen2.5:0.5b", &"x".repeat(100_001), 10)).unwrap_err().error_code, "prompt_too_long");
 }
 
 #[test]
 fn zero_max_tokens_rejected() {
-    assert_eq!(validate_request(&mk_req("llama-7b", "Hello", 0)).unwrap_err().error_code, "invalid_max_tokens");
+    assert_eq!(validate_request(&mk_req("qwen2.5:0.5b", "Hello", 0)).unwrap_err().error_code, "invalid_max_tokens");
 }
 
 #[test]
 fn max_tokens_too_large_rejected() {
-    assert_eq!(validate_request(&mk_req("llama-7b", "Hello", 50_000)).unwrap_err().error_code, "invalid_max_tokens");
+    assert_eq!(validate_request(&mk_req("qwen2.5:0.5b", "Hello", 50_000)).unwrap_err().error_code, "invalid_max_tokens");
 }
 
 #[test]
 fn temperature_out_of_range() {
-    let mut r = mk_req("llama-7b", "Hello", 10);
+    let mut r = mk_req("qwen2.5:0.5b", "Hello", 10);
     r.temperature = Some(3.0);
     assert_eq!(validate_request(&r).unwrap_err().error_code, "invalid_temperature");
 }
 
 #[test]
 fn temperature_valid() {
-    let mut r = mk_req("llama-7b", "Hello", 10);
+    let mut r = mk_req("qwen2.5:0.5b", "Hello", 10);
     r.temperature = Some(0.7);
     assert!(validate_request(&r).is_ok());
 }
 
 #[test]
 fn top_p_out_of_range() {
-    let mut r = mk_req("llama-7b", "Hello", 10);
+    let mut r = mk_req("qwen2.5:0.5b", "Hello", 10);
     r.top_p = Some(1.5);
     assert_eq!(validate_request(&r).unwrap_err().error_code, "invalid_top_p");
 }
 
 #[test]
 fn top_p_valid() {
-    let mut r = mk_req("llama-7b", "Hello", 10);
+    let mut r = mk_req("qwen2.5:0.5b", "Hello", 10);
     r.top_p = Some(0.9);
     assert!(validate_request(&r).is_ok());
 }
 
 #[test]
 fn optional_fields_none() {
-    let mut r = mk_req("llama-7b", "Hello", 10);
+    let mut r = mk_req("qwen2.5:0.5b", "Hello", 10);
     r.temperature = None;
     r.top_p = None;
     assert!(validate_request(&r).is_ok());
