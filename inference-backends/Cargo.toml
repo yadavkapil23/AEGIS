@@ -38,8 +38,16 @@ dashmap.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
 
-# Native inference
-llama-cpp-2.workspace = true
+# Native inference (optional, see `native-llama` feature)
+llama-cpp-2 = { workspace = true, optional = true }
+
+[features]
+default = []
+# Enables the native llama.cpp FFI backend (llama_cpp_sys/llama_cpp_safe).
+# Requires a working llama-cpp-2 build/link setup; off by default because
+# Ollama covers local inference (see src/ollama.rs) without the native
+# toolchain dependency.
+native-llama = ["llama-cpp-2"]
 
 # Testing
 [dev-dependencies]
