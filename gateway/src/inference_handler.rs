@@ -606,7 +606,7 @@ mod tests {
     #[test]
     fn test_validate_valid_request() {
         let req = InferenceRequest {
-            model: "llama-7b".to_string(),
+            model: "qwen2.5:0.5b".to_string(),
             prompt: "What is AI?".to_string(),
             max_tokens: 100,
             temperature: Some(0.7),
