@@ -6,17 +6,17 @@ pub struct BackendConfig {
     /// Hugging Face API configuration
     pub huggingface: Option<HuggingFaceConfig>,
 
-    /// vLLM configuration
-    pub vllm: Option<VLLMConfig>,
+    /// Ollama configuration
+    pub ollama: Option<OllamaConfig>,
 
     /// llama.cpp configuration
     pub llamacpp: Option<LlamaCppConfig>,
 
     /// Default backend preference
-    pub default_preference: String, // "auto", "huggingface", "vllm", "llamacpp"
+    pub default_preference: String, // "auto", "huggingface", "ollama", "llamacpp"
 
     /// Fallback order when backends fail
-    pub fallback_order: Vec<String>, // ["vllm", "llamacpp", "huggingface"]
+    pub fallback_order: Vec<String>, // ["ollama", "llamacpp", "huggingface"]
 
     /// Global timeout in milliseconds
     pub default_timeout_ms: u64,
@@ -56,13 +56,13 @@ pub struct HuggingFaceConfig {
     pub cache_ttl_secs: u64,
 }
 
-/// vLLM configuration
+/// Ollama configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VLLMConfig {
+pub struct OllamaConfig {
     /// Enable this backend
     pub enabled: bool,
 
-    /// vLLM endpoints (node URLs)
+    /// Ollama endpoints (node URLs)
     pub endpoints: Vec<String>,
 
     /// List of supported models
@@ -122,11 +122,11 @@ impl Default for BackendConfig {
     fn default() -> Self {
         Self {
             huggingface: None,
-            vllm: None,
+            ollama: None,
             llamacpp: None,
             default_preference: "auto".to_string(),
             fallback_order: vec![
-                "vllm".to_string(),
+                "ollama".to_string(),
                 "llamacpp".to_string(),
                 "huggingface".to_string(),
             ],
@@ -156,14 +156,14 @@ impl Default for HuggingFaceConfig {
     }
 }
 
-impl Default for VLLMConfig {
+impl Default for OllamaConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            endpoints: vec!["http://localhost:8000".to_string()],
+            endpoints: vec!["http://localhost:11434".to_string()],
             models: vec![
-                "mistralai/Mistral-7B-Instruct-v0.2".to_string(),
-                "meta-llama/Llama-2-7b-hf".to_string(),
+                "llama3".to_string(),
+                "mistral".to_string(),
             ],
             timeout_ms: 30000,
             max_concurrent_requests: 1000,
