@@ -80,7 +80,7 @@ curl -X POST http://localhost:8080/infer \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
-    "model": "llama-7b",
+    "model": "qwen2.5:0.5b",
     "prompt": "Write a high performance Rust function.",
     "max_tokens": 100,
     "temperature": 0.7,
@@ -95,7 +95,7 @@ curl -N -X POST http://localhost:8080/infer/stream \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
-    "model": "llama-7b",
+    "model": "qwen2.5:0.5b",
     "prompt": "Tell me a story",
     "max_tokens": 200
   }'
@@ -108,7 +108,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk-demo123" \
   -d '{
-    "model": "llama-7b",
+    "model": "qwen2.5:0.5b",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "What is Rust?"}
