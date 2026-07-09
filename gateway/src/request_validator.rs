@@ -134,7 +134,7 @@ mod tests {
 
     fn valid_req() -> InferenceRequest {
         InferenceRequest {
-            model: "llama-7b".into(),
+            model: "qwen2.5:0.5b".into(),
             prompt: "Hello world".into(),
             max_tokens: 100,
             temperature: Some(0.7),
