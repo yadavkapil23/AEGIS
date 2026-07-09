@@ -4,7 +4,7 @@ use crate::huggingface::HuggingFaceBackend;
 use crate::llamacpp::LlamaCppBackend;
 use crate::models::{BackendPreference, HealthStatus, InferenceRequest, InferenceResponse};
 use crate::traits::InferenceBackend;
-use crate::vllm::VLLMBackend;
+use crate::ollama::OllamaBackend;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 pub struct BackendRouter {
     config: BackendConfig,
     hf_backend: Option<Arc<HuggingFaceBackend>>,
-    vllm_backend: Option<Arc<VLLMBackend>>,
+    ollama_backend: Option<Arc<OllamaBackend>>,
     llamacpp_backend: Option<Arc<LlamaCppBackend>>,
     health_status: Arc<RwLock<BackendHealthStatus>>,
 }
@@ -21,7 +21,7 @@ pub struct BackendRouter {
 #[derive(Clone, Debug)]
 struct BackendHealthStatus {
     hf_healthy: bool,
-    vllm_healthy: bool,
+    ollama_healthy: bool,
     llamacpp_healthy: bool,
 }
 
@@ -43,14 +43,14 @@ impl BackendRouter {
             None
         };
 
-        let vllm_backend = if let Some(vllm_config) = &config.vllm {
-            match VLLMBackend::new(vllm_config.clone()) {
+        let ollama_backend = if let Some(ollama_config) = &config.ollama {
+            match OllamaBackend::new(ollama_config.clone()) {
                 Ok(backend) => {
-                    info!("vLLM backend initialized");
+                    info!("Ollama backend initialized");
                     Some(Arc::new(backend))
                 }
                 Err(e) => {
-                    warn!("Failed to initialize vLLM backend: {}", e);
+                    warn!("Failed to initialize Ollama backend: {}", e);
                     None
                 }
             }
@@ -87,7 +87,7 @@ impl BackendRouter {
             None
         };
 
-        if hf_backend.is_none() && vllm_backend.is_none() && llamacpp_backend.is_none() {
+        if hf_backend.is_none() && ollama_backend.is_none() && llamacpp_backend.is_none() {
             return Err(BackendError::ConfigError(
                 "No backends configured".to_string(),
             ));
@@ -96,11 +96,11 @@ impl BackendRouter {
         Ok(Self {
             config,
             hf_backend,
-            vllm_backend,
+            ollama_backend,
             llamacpp_backend,
             health_status: Arc::new(RwLock::new(BackendHealthStatus {
                 hf_healthy: true,
-                vllm_healthy: true,
+                ollama_healthy: true,
                 llamacpp_healthy: true,
             })),
         })
@@ -129,8 +129,8 @@ impl BackendRouter {
                         continue;
                     }
                 }
-                "vllm" => {
-                    if let Some(backend) = &self.vllm_backend {
+                "ollama" => {
+                    if let Some(backend) = &self.ollama_backend {
                         backend.infer(request.clone()).await
                     } else {
                         continue;
@@ -187,9 +187,9 @@ impl BackendRouter {
                     vec![]
                 }
             }
-            BackendPreference::VLLm => {
-                if health.vllm_healthy && self.vllm_backend.is_some() {
-                    vec!["vllm".to_string()]
+            BackendPreference::Ollama => {
+                if health.ollama_healthy && self.ollama_backend.is_some() {
+                    vec!["ollama".to_string()]
                 } else {
                     vec![]
                 }
@@ -198,10 +198,10 @@ impl BackendRouter {
                 // Smart routing based on heuristics
                 let mut backends = Vec::new();
 
-                // Prefer vLLM for low-latency requirements
+                // Prefer Ollama for low-latency requirements
                 if request.timeout_ms.is_some_and(|t| t < 5000) {
-                    if health.vllm_healthy && self.vllm_backend.is_some() {
-                        backends.push("vllm".to_string());
+                    if health.ollama_healthy && self.ollama_backend.is_some() {
+                        backends.push("ollama".to_string());
                     }
                     // Then try llama.cpp for local low-latency
                     if health.llamacpp_healthy && self.llamacpp_backend.is_some() {
@@ -213,7 +213,7 @@ impl BackendRouter {
                 for backend_name in &self.config.fallback_order {
                     if !backends.contains(backend_name) {
                         match backend_name.as_str() {
-                            "vllm" if health.vllm_healthy && self.vllm_backend.is_some() => {
+                            "ollama" if health.ollama_healthy && self.ollama_backend.is_some() => {
                                 backends.push(backend_name.clone());
                             }
                             "llamacpp" if health.llamacpp_healthy && self.llamacpp_backend.is_some() => {
@@ -253,19 +253,19 @@ impl BackendRouter {
             }
         }
 
-        // Check vLLM backend
-        if let Some(backend) = &self.vllm_backend {
+        // Check Ollama backend
+        if let Some(backend) = &self.ollama_backend {
             match backend.health_check().await {
                 Ok(status) => {
                     let mut health_status = self.health_status.write().await;
-                    health_status.vllm_healthy = status.healthy;
+                    health_status.ollama_healthy = status.healthy;
                     drop(health_status);
                     statuses.push(status);
                 }
                 Err(e) => {
-                    error!("vLLM health check failed: {}", e);
+                    error!("Ollama health check failed: {}", e);
                     let mut health_status = self.health_status.write().await;
-                    health_status.vllm_healthy = false;
+                    health_status.ollama_healthy = false;
                 }
             }
         }
@@ -300,7 +300,7 @@ impl BackendRouter {
             }
         }
 
-        if let Some(backend) = &self.vllm_backend {
+        if let Some(backend) = &self.ollama_backend {
             if let Ok(mut backend_models) = backend.get_models().await {
                 models.append(&mut backend_models);
             }
@@ -326,7 +326,7 @@ impl BackendRouter {
             }
         }
 
-        if let Some(backend) = &self.vllm_backend {
+        if let Some(backend) = &self.ollama_backend {
             if backend.supports_model(model).await? {
                 return Ok(true);
             }
@@ -351,9 +351,9 @@ impl BackendRouter {
             }
         }
 
-        if let Some(backend) = &self.vllm_backend {
+        if let Some(backend) = &self.ollama_backend {
             if let Err(e) = backend.warmup().await {
-                warn!("vLLM backend warmup failed: {}", e);
+                warn!("Ollama backend warmup failed: {}", e);
             }
         }
 
