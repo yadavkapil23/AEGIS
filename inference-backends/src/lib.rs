@@ -17,7 +17,7 @@ pub mod models;
 pub mod production_manager;
 pub mod router;
 pub mod traits;
-pub mod vllm;
+pub mod ollama;
 pub mod llama_cpp_sys;
 pub mod llama_cpp_safe;
 
@@ -30,13 +30,13 @@ pub use models::{BackendPreference, InferenceRequest, InferenceResponse};
 pub use production_manager::{CircuitBreaker, CircuitBreakerConfig, ProductionBackendManager, RateLimiter, Bulkhead, RetryConfig};
 pub use router::BackendRouter;
 pub use traits::InferenceBackend;
-pub use vllm::VLLMBackend;
+pub use ollama::OllamaBackend;
 
 /// Re-export common types
 pub mod prelude {
     pub use crate::{
         BackendConfig, BackendError, BackendPreference, BackendRouter, HuggingFaceBackend,
         InferenceBackend, InferenceRequest, InferenceResponse, LlamaCppBackend, MockBackend,
-        Result, VLLMBackend,
+        Result, OllamaBackend,
     };
 }
