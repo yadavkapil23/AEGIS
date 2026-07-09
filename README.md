@@ -4,7 +4,7 @@
 
 A production-grade LLM inference gateway and orchestration system built in Rust. AEGIS provides multi-backend inference routing, distributed KV-cache management with Raft consensus, cryptographic audit trails, and enterprise security — all with zero-cost abstractions and no garbage collector pauses.
 
-**Status: v3.0.0 — All 13 crates compile with zero errors. 18 unit/integration tests passing.**
+**Status: v3.0.0 — Workspace compiles with zero errors (default features; native llama.cpp FFI is opt-in via `native-llama`). `inference-backends` router/Ollama integration verified with 8 passing integration tests. A full live end-to-end run (gateway + Postgres + real Ollama model) has not yet been completed in this environment due to local disk space constraints — see Verification Status below.**
 
 ---
 
@@ -220,6 +220,32 @@ The Raft consensus protocol enables a 3-node scheduler cluster with automatic le
 - **Single-GPU focus**: KV-cache allocator is designed for one GPU per node. Multi-GPU support is not yet implemented.
 - **No model training**: AEGIS is inference-only. Model fine-tuning is out of scope.
 - **Windows development**: With `native-llama` disabled (the default), the workspace builds and tests pass with no C++ toolchain required. Enabling `native-llama` requires LLVM 17+ and CMake in PATH, and the llama.cpp native linker symbols (`llama_model_free`, `llama_model_default_params`, `llama_model_load_from_file`) must resolve.
+
+---
+
+## Verification Status
+
+What has actually been confirmed to work, vs. what compiles but hasn't been run live:
+
+| Claim | Status |
+|-------|--------|
+| `cargo build --workspace` (default features) | ✅ Verified — zero errors |
+| `inference-backends` router + Ollama backend (mocked HTTP) | ✅ Verified — 8/8 integration tests pass (`inference-backends/tests/router_integration_tests.rs`) |
+| Real Ollama server responds to `qwen2.5:0.5b` via OpenAI-compatible `/v1/completions` | ✅ Verified manually (`curl` against a locally running Ollama with the model pulled) |
+| Gateway binary (`aegis-gateway`) boots against real Postgres + real Ollama and serves a live `/infer` request | ❌ **Not yet verified** — attempted, but the local machine ran out of disk space mid-build twice in a row. The build was in progress, not failed on a code error, when verification was paused. |
+| `aegis-scheduler` unit test suite | ❌ Fails to *compile* (pre-existing bugs unrelated to this work: private field access and argument-count mismatches in `scheduler/src/consensus_allocator.rs`'s own test module) |
+
+**To finish live verification**: ensure several GB of free disk space, then run:
+```bash
+docker compose -f docker-compose-services.yml up -d postgres
+# pull the model once: curl http://localhost:11434/api/pull -d '{"name":"qwen2.5:0.5b"}'
+DATABASE_URL=postgres://postgres:password@localhost:5433/aegis_gateway \
+JWT_SECRET=dev-secret \
+OLLAMA_ENDPOINT=http://localhost:11434 \
+API_KEYS=sk-demo123 \
+cargo run -p aegis-gateway
+```
+then hit `/infer` per the Quick Start section above.
 
 ---
 

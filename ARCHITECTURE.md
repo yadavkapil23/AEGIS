@@ -462,6 +462,7 @@ Token bucket algorithm with lazy per-identity limiters stored in `DashMap`.
 | Unit (resilience) | `resilience/src/` | 8 | Circuit breaker state transitions, retry logic, timeout, graceful degradation |
 | Unit (observability) | `observability/src/` | 10 | Metrics registry, health manager, tracing config, error types |
 | Integration | `gateway/tests/` | 17+ | HTTP endpoints, request validation, contract tests, chaos tests |
+| Integration (Ollama, mocked HTTP) | `inference-backends/tests/router_integration_tests.rs` | 8 | `BackendRouter` end-to-end against a mocked Ollama server: inference, model gating, HTTP error propagation, health checks, round-robin load balancing, model aggregation |
 | Unit (other) | Various `#[cfg(test)]` modules | 20+ | Allocator, audit trail, consensus, scheduler |
 | Benchmarks | `benchmarks/benches/` | 3 | Allocation throughput, audit latency, e2e inference |
 
@@ -469,6 +470,11 @@ Token bucket algorithm with lazy per-identity limiters stored in `DashMap`.
 cargo test --workspace                    # All tests
 cargo test -p resilience                  # Resilience tests
 cargo test -p observability               # Observability tests
+cargo test -p inference-backends --test router_integration_tests  # Router/Ollama integration
 cargo test -p aegis-gateway --test http_endpoint_tests  # Gateway integration
 cargo bench -p aegis-benchmarks           # Performance benchmarks
 ```
+
+**Known gap**: `aegis-scheduler`'s own `#[cfg(test)]` module fails to *compile* — pre-existing bugs unrelated to the inference-backends work (private field access on `QuorumConsensus.state`, argument-count mismatches) in `scheduler/src/consensus_allocator.rs`. This predates the current changes; verified via `git stash` that the scheduler build never previously reached its test compilation step (the workspace build failed earlier, on the native llama.cpp linker step, before this was fixed).
+
+**Not yet verified**: a live end-to-end run of the `aegis-gateway` binary against a real PostgreSQL instance and a real Ollama server serving `qwen2.5:0.5b`. The Ollama model itself was pulled and manually confirmed to respond correctly over its OpenAI-compatible `/v1/completions` endpoint (which is what `gateway/src/llm_backend.rs` calls), but the gateway binary build was interrupted twice by the host running out of disk space mid-compile. Retry once there is several GB of free space (see README.md's Verification Status section for the exact repro steps).

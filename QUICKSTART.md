@@ -205,7 +205,10 @@ cargo test -p aegis-gateway --test http_endpoint_tests
 | Issue | Solution |
 |-------|----------|
 | `DATABASE_URL` not set | Export `DATABASE_URL=postgres://postgres:postgres@localhost:5432/aegis` |
-| No backends available | Start at least one: vLLM, llama.cpp, Ollama, or set HUGGINGFACE_API_KEY |
-| Windows: llama.cpp won't build | Install LLVM 17+ and set `$env:LIBCLANG_PATH="C:\Program Files\LLVM\bin"` |
+| No backends available | Start at least one: Ollama (recommended, `OLLAMA_ENDPOINT`), llama.cpp, vLLM, or set HUGGINGFACE_API_KEY |
+| Windows: llama.cpp won't build | Install LLVM 17+ and set `$env:LIBCLANG_PATH="C:\Program Files\LLVM\bin"` — only needed if you enable the `native-llama` feature; Ollama does not require this |
 | Port 8080 in use | Set `GATEWAY_PORT=8081` or stop the conflicting process |
 | Auth failed | Use `X-API-Key: sk-demo123` header (or create a key via `/api/keys`) |
+| `cargo run`/`cargo build` fails with "no space on device" or "not enough space on the disk" | Rust builds (especially with `tonic`/`opentelemetry`/`sqlx`) consume several GB. Run `cargo clean` in the workspace root to reclaim space, and ensure at least ~10GB free before rebuilding — a full `aegis-gateway` build from a clean cache needs that much headroom. |
+
+**Note on verification**: the gateway's Ollama integration was confirmed by pulling `qwen2.5:0.5b` into a local Ollama and calling its OpenAI-compatible `/v1/completions` endpoint directly — that works. A full live run of the `aegis-gateway` binary end-to-end (real Postgres + real Ollama + `/infer`) has not yet been completed in this environment; the last attempt was interrupted by the host running out of disk space mid-build, not a code failure. See README.md's "Verification Status" section for exact repro steps once disk space is available.
