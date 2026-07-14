@@ -381,4 +381,4 @@ cargo clippy --fix --workspace --allow-dirty
 
 ## License
 
-Internal project — not yet licensed for public distribution.
+MIT LICENSE
