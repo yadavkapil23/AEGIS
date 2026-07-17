@@ -13,7 +13,7 @@ AEGIS is an **infrastructure-first LLM inference engine** that sits between your
 - **Multi-Backend Orchestration**: Routes inference requests across Ollama (default, local), llama.cpp (optional native FFI), vLLM (optional, high-throughput self-hosted), and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
 - **Streaming Inference**: Server-Sent Events (SSE) streaming for real-time token delivery.
 - **Temperature & Top-P Sampling**: Proper softmax scaling with nucleus sampling in the native llama.cpp backend.
-- **Cryptographic Audit Engine**: Chains every inference event into a BLAKE3 hash tree stored in PostgreSQL — mathematically tamper-proof execution logs for compliance.
+- **Cryptographic Audit Engine**: Chains every inference event into a BLAKE3 hash tree stored in PostgreSQL - mathematically tamper-proof execution logs for compliance.
 - **Enterprise Security**: JWT authentication, API key management (SHA-256 hashed), 3-tier token bucket rate limiting, TLS/mTLS support.
 - **Resilience Patterns**: Circuit breakers (Closed/Open/HalfOpen), exponential backoff retry, bulkhead concurrency control, graceful degradation.
 - **Real-time Observability**: Prometheus metrics, Grafana dashboards, OpenTelemetry distributed tracing, structured JSON logging.
