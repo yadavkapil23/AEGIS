@@ -7,7 +7,6 @@ A production-grade LLM inference gateway and orchestration system built in Rust.
 ---
 
 ## What is AEGIS?
-
 AEGIS is an **infrastructure-first LLM inference engine** that sits between your applications and your models. It is not a model wrapper - it is a full orchestration layer providing:
 
 - **Multi-Backend Orchestration**: Routes inference requests across Ollama (default, local), llama.cpp (optional native FFI), vLLM (optional, high-throughput self-hosted), and HuggingFace Cloud with automatic fallback and per-backend circuit breakers.
